@@ -1,10 +1,10 @@
-""" This serves as the configuration file for the ETSI pipeline. """
+""" This serves as the configuration file for the TOROS pipeline. """
 
 
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'mac_studio'
+    MACHINE = 'moon'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
@@ -24,8 +24,8 @@ class Configuration:
     WRITE_SKY = 'N'
     MASTER_SKIP = 'Y'
     DIFFERENCE_SKIP = 'Y'
-    PHOTOMETRY_SKIP = 'N'
-    LIGHTCURVE_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'Y'
+    LIGHTCURVE_SKIP = 'N'
 
     # telescope information
     PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
@@ -69,27 +69,27 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/Users/yuw816/Development/toros/"
-    ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
-    ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
-    LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
-    QUERIES_DIRECTORY = WORKING_DIRECTORY + 'queries/'
-    CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
+    WORKING_DIRECTORY = "C:\\Users\\ryanj\\Development\\toros\\"
+    ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts\\'
+    ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis\\'
+    LOG_DIRECTORY = WORKING_DIRECTORY + 'logs\\'
+    QUERIES_DIRECTORY = WORKING_DIRECTORY + 'queries\\'
+    CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference\\'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
-    RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
-    CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
-    MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
-    MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"
-    MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master/"
-    CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
-    CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
-    BIAS_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_bias/"
-    FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat/"
-    DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark/"
-    LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
-    DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
+    DATA_DIRECTORY = "C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\TOROS\\"
+    RAW_DIRECTORY = "C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\TOROS\\"
+    CLEAN_DIRECTORY = DATA_DIRECTORY + "clean\\"
+    MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master\\"
+    MASTER_DIRECTORY = DATA_DIRECTORY + "master\\" + FIELD + "\\"
+    MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master\\"
+    CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids\\"
+    CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration\\"
+    BIAS_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_bias\\"
+    FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat\\"
+    DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark\\"
+    LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc\\"
+    DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff\\"
 
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,

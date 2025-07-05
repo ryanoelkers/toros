@@ -8,7 +8,7 @@ import scipy.ndimage
 from astropy.io import fits
 from astropy import units as u
 from astropy.coordinates import SkyCoord
-import twirl
+# import twirl
 from photutils.detection import DAOStarFinder
 from astropy.stats import SigmaClip
 from photutils.background import Background2D, MedianBackground

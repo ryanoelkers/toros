@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
 matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
-
+import os
 
 class Photometry:
 
@@ -99,7 +99,7 @@ class Photometry:
 
     @staticmethod
     def combine_flux_files(star_list):
-        """ This function combines all of the flux files in a given directory into a single data frame.
+        """ This function combines the flux files in a given directory into a single data frame.
 
         :parameter star_list- The master frame star list
 
@@ -107,9 +107,12 @@ class Photometry:
         """
 
         # get the flux files to read in
-        files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
-                                                     Configuration.FIELD,
-                                                     '.flux')
+        # files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
+        #                                              Configuration.FIELD,
+        #                                              'diff',
+        #                                              '.flux')
+
+        files = Utils.get_file_list("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\flux\\", ".flux")
         nfiles = len(files)
 
         num_rrows = len(star_list)
@@ -120,10 +123,11 @@ class Photometry:
         er = np.zeros((num_rrows, nfiles))
         cln = np.zeros((num_rrows, nfiles))
         zpt = np.zeros((num_rrows, nfiles))
+
         for idy, file in enumerate(files):
 
             # read in the data frame with the flux information
-            img_flux = pd.read_csv(file, header=0)
+            img_flux = pd.read_csv("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\flux\\" + file, header=0)
 
             # set the data to the numpy array
             jd[idy] = img_flux.loc[0, 'jd']
@@ -133,12 +137,12 @@ class Photometry:
             zpt[:, idy] = img_flux['zpt'].to_numpy()
 
         # write out the light curve data
-        Photometry.write_light_curves(num_rrows, jd, mag, er, cln, zpt)
+        Photometry.write_light_curves(num_rrows, star_list.star_id.to_list(), jd, mag, er, cln, zpt)
 
         return
 
     @staticmethod
-    def write_light_curves(nstars, jd, mag, er, cln, zpt):
+    def write_light_curves(nstars, starid, jd, mag, er, cln, zpt):
         """ This function will write the ETSI columns to a text file for later
 
         :return - Nothing is returned, but the light curve files are written
@@ -150,14 +154,20 @@ class Photometry:
         Utils.log("Starting light curve writing...", "info")
 
         for idx in range(0, nstars):
-            if idx >= 1000:
-                star_id = str(idx)
-            elif (idx < 1000) & (idx >= 100):
-                star_id = '0' + str(idx)
-            elif (idx < 100) & (idx >= 10):
-                star_id = '00' + str(idx)
+            if os.path.exists("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\lc\\" + str(idx) + ".lc"):
+                os.remove("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\lc\\" + str(idx) + ".lc")
+            if starid[idx] >= 100000:
+                lc_nme = str(starid[idx])
+            elif (starid[idx] < 100000) & (starid[idx] >= 10000):
+                lc_nme = '0' + str(starid[idx])
+            elif (starid[idx] < 10000) & (starid[idx] >= 1000):
+                lc_nme = '00' + str(starid[idx])
+            elif (starid[idx] < 1000) & (starid[idx] >= 100):
+                lc_nme = '000' + str(starid[idx])
+            elif (starid[idx] < 100) & (starid[idx] >= 10):
+                lc_nme = '0000' + str(starid[idx])
             else:
-                star_id = '000' + str(idx)
+                lc_nme = '00000' + str(starid[idx])
 
             # add the time, magnitude and error to the data frame
             lc['jd'] = np.around(jd, decimals=6)
@@ -166,9 +176,11 @@ class Photometry:
             lc['cln'] = np.around(cln[idx, :], decimals=6)
             lc['zpt'] = np.around(zpt[idx, :], decimals=6)
 
+            lc = lc.sort_values(by='jd')
             # write the new file
-            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
-                                                         Configuration.FIELD + "/" +
-                                                         star_id + ".lc", sep=" ", index=False, na_rep='9.999999')
-
+            # lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
+            #                                             Configuration.FIELD + "/" +
+            #                                             lc_nme + ".lc", sep=" ", index=False, na_rep='9.999999')
+            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\lc\\" +
+                                                         lc_nme + ".lc", sep=" ", index=False, na_rep='9.999999')
         return
