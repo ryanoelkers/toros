@@ -3,15 +3,8 @@ from config import Configuration
 from libraries.utils import Utils
 from libraries.photometry import Photometry
 import os
-from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
-from photutils.aperture import aperture_photometry
-from photutils.centroids import centroid_sources
-import numpy as np
 import pandas as pd
 import warnings
-from astropy.io import fits
-from astropy.wcs import WCS
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
@@ -37,6 +30,10 @@ class Lightcurves:
                                                      Configuration.FIELD,
                                                      'diff',
                                                      Configuration.FILE_EXTENSION)
+
+        # check for any "known" transients and variable star files
+        if Configuration.KNOWN_VARIABLES == 'Y':
+            star_list = Photometry.add_variable_list(star_list)
 
         # begin the algorithm to produce the photometry
         for idx, file in enumerate(files):

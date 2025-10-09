@@ -13,17 +13,14 @@ class Configuration:
     RA = 6.0223292
     DEC = -72.0814444
 
-    # is there a transient you want the light curve for?
-    TRANSIENT_LC = 'Y'
-    TRANSIENT_NAME = 'AT2024xsq' # 'AT2024xhm'  # 'AT2024ykx' #
-    TRANSIENT_RA = 10.1958012 # 46.9968525  # 307.422951333 #
-    TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
+    # are there additional known transients or variables you want photometry for?
+    KNOWN_VARIABLES = 'Y'
 
     # steps to skip
-    CLEAN_SKIP = 'Y'
+    CLEAN_SKIP = 'N'
     WRITE_SKY = 'N'
     MASTER_SKIP = 'Y'
-    DIFFERENCE_SKIP = 'N'
+    DIFFERENCE_SKIP = 'Y'
     PHOTOMETRY_SKIP = 'N'
     LIGHTCURVE_SKIP = 'N'
 
@@ -50,6 +47,8 @@ class Configuration:
     AXS_X = 10560
     AXS_Y = 10560
     AXS = 10560
+    CHP_X = 1320
+    CHP_Y = 5280
 
     # update the differencing information, primarily the number of stars to use, and the kernel size
     KRNL = 2  # kernel size 2 * KNRL + 1
