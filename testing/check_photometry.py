@@ -18,14 +18,14 @@ from astropy.stats import sigma_clip as sc
 from random import choices
 import astropy.units as u
 # remove stars near 47 Tuc and the small cluster
-star_list = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/master/"
+star_list = pd.read_csv("/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/master/"
                         + Configuration.FIELD + "_star_list_updated.txt", sep=' ', low_memory=False, index_col=0)
 bd_star = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
                    (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
 
 for idx in range(167940, len(star_list)):
 
-    lc = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
+    lc = pd.read_csv("/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
                      + Configuration.FIELD + "/" +
                      Configuration.FIELD +"_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
     lc['cln'] = lc.mag.to_numpy() - lc.trd.to_numpy()
