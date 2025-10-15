@@ -9,6 +9,7 @@ from photutils.aperture import CircularAperture
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
 import pandas as pd
+from reproject import reproject_interp, reproject_exact
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
@@ -38,6 +39,7 @@ class BigDiff:
                                                      Configuration.FIELD,
                                                      'clean',
                                                      Configuration.FILE_EXTENSION)
+        files = np.sort(files)
         nfiles = len(files)
 
         # read in the master frame information
@@ -57,7 +59,7 @@ class BigDiff:
             fin_nme = Preprocessing.mk_nme(files[ii], 'Y', 'N', 'N', 'N', 'N')
 
             if os.path.isfile(fin_nme) == 1:
-                Utils.log("File " + fin_nme + " found. Skipping...", "info")
+                 Utils.log("File " + fin_nme + " found. Skipping...", "info")
 
             # check to see if the differenced file already exists
             if os.path.isfile(fin_nme) == 0:
@@ -86,7 +88,9 @@ class BigDiff:
 
         # write the new image file
         img_sbkg = org_img - org_header['SKY']
-        img_align = Preprocessing.align_img(img_sbkg, org_header, master_header)
+        # img_align = Preprocessing.align_img(img_sbkg, org_header, master_header)
+        img_align, footprint = reproject_interp((img_sbkg, org_header), master_header,
+                                                shape_out=img_sbkg.shape)
 
         org_header['WCSAXES'] = master_header['WCSAXES']
         org_header['CRPIX1'] = master_header['CRPIX1']
@@ -110,7 +114,7 @@ class BigDiff:
         org_header['ALIGNED'] = 'Y'
 
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
-                       img_align, org_header, overwrite=True)
+                        img_align, org_header, overwrite=True)
 
         # get the kernel stars for the subtraction
         nstars = BigDiff.find_subtraction_stars_img(img_align, star_list)

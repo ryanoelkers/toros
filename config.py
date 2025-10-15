@@ -17,12 +17,12 @@ class Configuration:
     KNOWN_VARIABLES = 'Y'
 
     # steps to skip
-    CLEAN_SKIP = 'N'
+    CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
-    MASTER_SKIP = 'Y'
-    DIFFERENCE_SKIP = 'Y'
-    PHOTOMETRY_SKIP = 'N'
-    LIGHTCURVE_SKIP = 'N'
+    MASTER_SKIP = 'N'
+    DIFFERENCE_SKIP = 'N'
+    PHOTOMETRY_SKIP = 'Y'
+    LIGHTCURVE_SKIP = 'Y'
 
     # how do you want to clean the image?
     SUBTRACT_BIAS = "Y"

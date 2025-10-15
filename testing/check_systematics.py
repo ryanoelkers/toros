@@ -18,72 +18,137 @@ from astropy.timeseries import LombScargle
 from astropy.stats import sigma_clip as sc
 from random import choices
 from sklearn.linear_model import LinearRegression
-star_list = pd.read_csv("/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/master/"
+
+def jstet(mg, er):
+
+    wk = 1.0  # Weighting Factor
+
+    MeanMag = np.mean(mg)
+    nms = len(mg)
+
+    Jt = np.arange(nms) * 0.0
+    Jb = np.arange(nms) * 0.0
+    Kt = np.arange(nms) * 0.0
+    Kb = np.arange(nms) * 0.0
+
+    for i in range(0, nms-2, 2):
+
+        Sigi = (mg[i] - MeanMag) / (er[i]) * (np.sqrt(nms / (nms - 1)))
+        Sigj = (mg[i + 1] - MeanMag) / (er[i + 1]) * (np.sqrt(nms / (nms - 1)))
+
+        Pk = Sigi * Sigj  # pg 853 Stetson 1996 Eq 2 Kinemuchi
+        if Pk > 0.0:
+            sgnPk = 1.0
+        if Pk == 0.0:
+            sgnPk = 0.0
+        if Pk < 0.0:
+            sgnPk = -1.0
+
+        Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
+        Jb[i] = (wk)  # Kinemuchi eq.1 (Denominator)
+        Kt[i] = abs(Sigi)  # Kinemuchi eq.5 (Numerator)
+        Kb[i] = abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
+
+    jstet = sum(Jt) / sum(Jb)  # Eq 1
+    kstet = ((1.0 / nms) * sum(Kt)) / (np.sqrt((1.0 / nms) * sum(Kb)))  # Eq 5
+    lstet = jstet * kstet / (0.7908)
+
+    return jstet, kstet, lstet
+
+star_list = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/master/"
                         + Configuration.FIELD + "_star_list_updated.txt", sep=' ', low_memory=False, index_col=0)
 star_list['bd_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
-                                (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
+                                (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 2, 0)
+# add "chip" to the star_list
+star_list['chip'] = 1
+kk = 1
+for idx in range(0, Configuration.AXS_X, Configuration.CHP_X):
+    for idy in range(0, Configuration.AXS_Y, Configuration.CHP_Y):
+        star_list['chip'] = np.where((star_list.xcen > idx) & (star_list.xcen < idx + 1320) &
+                                     (star_list.ycen > idy) & (star_list.ycen < idy + 5280),
+                                     kk, star_list.chip)
+        kk = kk + 1
 
-dir = "/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
+dir = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/" + Configuration.FIELD + "/"
 all_files = np.sort(Utils.get_file_list(dir, '.lc'))
 
-for idx, row in star_list[25706:].iterrows():
+for idx, row in star_list[9000:].iterrows():
 
     if row.bd_star == 0:
-        lc = pd.read_csv("/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
+        lc = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
                          + Configuration.FIELD + "/" +
                          Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
         ok_data = sc(lc.mag, sigma=3)
 
+        lc['flux'] = 10**((lc.mag-2.5*np.log10(300.)-25)/-2.5)
+        lc['tot_flux'] = lc.flux - ((lc.sky + lc.bkg) * np.pi * Configuration.APER_SIZE ** 2)
+
         # get the similar magnitude bright stars
-        star_list['dmag'] = np.abs(star_list['master_mag'] - row.master_mag)
-        trend_list = star_list[(star_list.dmag > 0) & (star_list.dmag < .01)].copy()
+        star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
+        star_list['dist'] = np.sqrt((star_list.y - row.y)**2 + (star_list.x - row.x)**2)
+        trend_list = star_list[(star_list.chip == row.chip) &
+                               (star_list.bd_star == 0) &
+                               (star_list.dmag > 0) & (star_list.dmag < 2) &
+                               # (star_list.dist < 4000) &
+                               (star_list.object_type != 'Var') & (star_list.object_type != 'Xray')].copy().reset_index(drop=True)
 
-        trs = pd.DataFrame()
-        cols = []
-        spr = np.zeros(len(trend_list))
+        cols = {}
+        col_nme = []
+        sp = np.zeros(len(trend_list))
         kk = 0
-        for idy, rw in trend_list.iterrows():
-            if idy < len(all_files):
-                tr = pd.read_csv(dir + all_files[rw.star_id], sep=' ')
-                spr[kk], _ = spearmanr(lc[~ok_data.mask].mag, tr[~ok_data.mask].mag)
-                cols.append('mag_' + str(kk))
-                trs['mag_' + str(kk)] = tr.mag.to_numpy()
+        j = np.zeros(len(trend_list))
+        k = np.zeros(len(trend_list))
+        l = np.zeros(len(trend_list))
 
+        for idy, rw in trend_list.iterrows():
+
+            tr = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
+                             + Configuration.FIELD + "/" +
+                             Configuration.FIELD + "_" + str(rw.source_id) + ".lc", sep=' ')
+            j[idy], k[idy], l[idy] = jstet(tr[~ok_data.mask].mag.to_numpy(), tr[~ok_data.mask].err.to_numpy())
+            sp[idy], _ = spearmanr(tr[~ok_data.mask].mag.to_numpy(), lc[~ok_data.mask].mag.to_numpy())
+
+            tr['flux'] = 10 ** ((tr.mag - 2.5 * np.log10(300.) - 25) / -2.5)
+            tr['nmag'] = 25 - 2.5 * np.log10((tr.flux - (tr.bkg * np.pi * Configuration.APER_SIZE ** 2)) / 300.)
+
+            cols['mag_'+str(kk)] = tr.mag.to_numpy() - (rw.master_mag + 2.5*np.log10(300))
+
+            col_nme.append('mag_'+str(kk))
             kk = kk + 1
+
+        _, jm, js = scs(j, sigma=1)
+        trs = pd.DataFrame(cols)
         dys = np.unique(lc.jd.to_numpy().astype(int))
 
-        lc['trd'] = np.zeros(len(lc))
-        ok = np.argsort(spr)[-10:]
-        ok_trs = ['mag_' + o for o in ok.astype(str)]
+        off = np.zeros(len(lc))
+
+        for idy, t in enumerate(ok_data.mask):
+            if not t:
+                _, off[idy], _ = scs(trs.loc[idy, col_nme], sigma=1)
+
         for dy in dys:
-            model = (LinearRegression().fit(trs.loc[(~ok_data.mask) & (lc.jd.astype(int) == dy), ok_trs],
-                                           lc.loc[(~ok_data.mask) & (lc.jd.astype(int) == dy)].mag).
-                     predict(trs.loc[(~ok_data.mask) & (lc.jd.astype(int) == dy), ok_trs]))
-            lc.loc[(~ok_data.mask) & (lc.jd.astype(int) == dy), 'trd'] = model
+            dd = (lc.jd.astype(int) == dy) & (~ok_data.mask)
 
+            xx = trs[col_nme][dd]
+            # xx = lc[['trd']][dd]
+            yy = lc[dd].mag.to_numpy()
+
+            model = LinearRegression().fit(xx, yy).predict(xx)
+
+            plt.subplot(2, 1, 1)
+            plt.scatter(lc[dd].jd, lc[dd].nmag, c='k')
+            plt.scatter(lc[dd].jd, lc[dd].trd + lc[dd].mag.median(), c='b', marker='x')
+            plt.scatter(lc[dd].jd, off[dd] + lc[dd].mag.median(), c='g', marker='x')
+
+            plt.subplot(2, 1, 2)
+            plt.scatter(lc[dd].jd, lc[dd].bkg)
+
+            print(np.std(lc[dd].mag - off[dd]), np.std(lc[dd].mag - lc[dd].trd), row.master_flux_er / row.master_flux)
+            # plt.scatter(lc[dd].jd, model, c='g', marker='x')
+            plt.show()
+
+        lc['phase'] = (lc.jd - lc.jd.min()) / 0.371452 % 1
+        # plt.scatter(lc[~ok_data.mask].phase, lc[~ok_data.mask].mag - off[~ok_data.mask], c='k', marker='.')
+        # plt.scatter(lc[~ok_data.mask].phase, lc[~ok_data.mask].mag - lc[~ok_data.mask].trd + 0.2, c='r', marker='.')
+        # plt.show()
         print('hold')
-        del lc
-
-    if (idx > 0) & (idx % 1000 == 0):
-        Utils.log("1000 stars read in. " + str(len(star_list) - idx - 1) + ".", 'info')
-        gc.collect()
-
-mm = mg[mg > 0]
-s2 = err2[mg > 0]
-s1 = err1[mg > 0]
-rms = rms[mg > 0]
-ss = np.average([s2, s1], axis=0, weights=[1, 0.25])
-tt = medfilt(ss, 25)
-rr = medfilt(s2, 25)
-kk = medfilt(s1, 25)
-plt.scatter(mm+ 0.634924, rms, marker='.', c='k', alpha=0.2)
-plt.plot(mm+ 0.634924, kk, marker='.', c='blue')
-plt.plot(mm+ 0.634924, tt, marker='.', c='orange')
-plt.plot(mm+ 0.634924, rr, marker='.', c='r')
-plt.ylabel('rms')
-plt.xlabel('T$_G$')
-plt.yscale('log')
-plt.ylim([0.002, 3])
-plt.xlim([8, 22.5])
-plt.show()
-print('hold')

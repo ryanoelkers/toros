@@ -1,6 +1,7 @@
 from config import Configuration
 from libraries.utils import Utils
 from libraries.preprocessing import Preprocessing
+from libraries.photometry import Photometry
 import numpy as np
 import os
 from astropy.io import fits
@@ -67,6 +68,10 @@ class Master:
             star_list['y'] = y
             star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
                                   (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
+
+            # check for any "known" transients and variable star files
+            if Configuration.KNOWN_VARIABLES == 'Y':
+                star_list = Photometry.add_variable_list(star_list, master_header)
 
             star_list['xcen'], star_list['ycen'] = centroid_sources(master,
                                                                     star_list.x.to_numpy(),

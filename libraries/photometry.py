@@ -23,18 +23,15 @@ from astropy.wcs import WCS
 class Photometry:
 
     @staticmethod
-    def add_variable_list(star_list):
+    def add_variable_list(star_list, master_header):
         """ This function will read in the known variable star / transient list for the star field. It will get
         master frame photometry and x/y pixel position so the stars can be written to file.
 
         :parameter star_list - The data frame with the original star list
+        :parameter master_header - The header of the master frame
 
         :return updated_list - The star list with the transients is returned
         """
-
-        # get the master frame
-        master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY +
-                                             Configuration.FIELD + '_master.fits', header=True)
 
         # now get the variable / transient list
         known = pd.read_csv(Configuration.MASTER_DIRECTORY + "known_objects/" +
@@ -69,59 +66,7 @@ class Photometry:
         # drop stars out of the frame
         known = known[(known.x >= 530) & (known.x < 10465) & (known.y >= 490) & (known.y < 10045)].copy().reset_index(drop=True)
 
-        # centroid the positions
-        positions = known[['xcen', 'ycen']].copy().reset_index(drop=True)
-
-        # run aperture photometry
-        # set up the star aperture and sky annuli
-        aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
-        aperture_area = aperture.area  # the area of the aperture
-        annulus_aperture = CircularAnnulus(positions, r_in=Configuration.ANNULI_INNER,
-                                           r_out=Configuration.ANNULI_OUTER)
-
-        # get the background stats
-        aperstats = ApertureStats(master, annulus_aperture)
-        bkg_mean = aperstats.mean
-        total_bkg = bkg_mean * aperture_area
-
-        # run the photometry to get the data table
-        phot_table = aperture_photometry(master, aperture, method='exact')
-
-        # extract the flux from the table
-        # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
-        star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
-
-        # calculate the expected photometric error
-        star_error = star_flux
-        bkg_error = master_header['SKY'] * aperture_area * Configuration.GAIN
-
-        # combine sky and signal error in quadrature
-        star_flux_err = np.sqrt(star_error + bkg_error)
-
-        # convert to magnitude
-        mag = 25. - 2.5 * np.log10(star_flux)
-        mag_er = (np.log(10.) / 2.5) * (star_flux_err / star_flux)
-
-        # initialize the light curve data frame
-        known['master_mag'] = mag
-        known['master_mag_er'] = mag_er
-        known['master_flux'] = star_flux
-        known['master_flux_er'] = star_flux_err
-        known['master_sky'] = total_bkg
-        known['toros_field_id'] = Configuration.FIELD
-        known = known.drop(columns=['coords'])
-
-        #concatenate the two lists
-        updated_list = pd.concat([star_list, known]).reset_index(drop=True)
-        updated_list['star_id'] = np.where(np.isnan(updated_list.star_id),
-                                           updated_list.index.values,
-                                           updated_list.star_id)
-        updated_list.star_id = updated_list.star_id.astype(int)
-
-        # write out the updated file
-        updated_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list_updated.txt', sep=' ')
-
-        return updated_list
+        return star_list
 
     @staticmethod
     def single_frame_aperture_photometry(star_list, img_name, fin_name):

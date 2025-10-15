@@ -31,10 +31,6 @@ class Lightcurves:
                                                      'diff',
                                                      Configuration.FILE_EXTENSION)
 
-        # check for any "known" transients and variable star files
-        if Configuration.KNOWN_VARIABLES == 'Y':
-            star_list = Photometry.add_variable_list(star_list)
-
         # begin the algorithm to produce the photometry
         for idx, file in enumerate(files):
 
