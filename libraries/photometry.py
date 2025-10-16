@@ -33,21 +33,24 @@ class Photometry:
         :return updated_list - The star list with the transients is returned
         """
 
+        # add a column to link in star_list
+        star_list['var_id'] = ' '
+
         # now get the variable / transient list
-        known = pd.read_csv(Configuration.MASTER_DIRECTORY + "known_objects/" +
+        known = pd.read_csv(Configuration.MASTER_DIRECTORY +
                             Configuration.FIELD + "_known_objects.csv", sep=",")
 
         # update the ra and dec in the known data frame to be in degrees
-        known['ra'] = known.apply(lambda x: ((float(x['coords'].split(' ')[0]) / 24) +
-                                            (float(x['coords'].split(' ')[1]) / 60 / 24) +
-                                            (float(x['coords'].split(' ')[2]) / 60 / 60 / 24)) * 360, axis=1)
+        known['ra'] = known.apply(lambda x: ((float(x['coords_ra'].split(' ')[0]) / 24) +
+                                            (float(x['coords_ra'].split(' ')[1]) / 60 / 24) +
+                                            (float(x['coords_ra'].split(' ')[2]) / 60 / 60 / 24)) * 360, axis=1)
 
         # be careful with negative declinations, you need to subtract and not add
-        known['dec'] = known.apply(lambda x: float(x['coords'].split(' ')[3]) -
-                                            (float(x['coords'].split(' ')[4]) / 60) -
-                                            (float(x['coords'].split(' ')[5]) / 60 / 60) if float(x['coords'].split(' ')[3]) < 0 else float(x['coords'].split(' ')[3]) +
-                                            (float(x['coords'].split(' ')[4]) / 60) +
-                                            (float(x['coords'].split(' ')[5]) / 60 / 60), axis=1)
+        known['dec'] = known.apply(lambda x: float(x['coords_de'].split(' ')[0]) -
+                                            (float(x['coords_de'].split(' ')[1]) / 60) -
+                                            (float(x['coords_de'].split(' ')[2]) / 60 / 60) if float(x['coords_de'].split(' ')[0]) < 0 else float(x['coords_de'].split(' ')[0]) +
+                                            (float(x['coords_de'].split(' ')[1]) / 60) +
+                                            (float(x['coords_de'].split(' ')[2]) / 60 / 60), axis=1)
 
         # get the header file and convert to x/y pixel positions
         w = WCS(master_header)
@@ -58,13 +61,27 @@ class Photometry:
         x, y = w.all_world2pix(ra, dec, 0)
 
         # add the x/y to the star data frame
-        known['xcen'] = x
-        known['ycen'] = y
         known['x'] = x
         known['y'] = y
 
-        # drop stars out of the frame
-        known = known[(known.x >= 530) & (known.x < 10465) & (known.y >= 490) & (known.y < 10045)].copy().reset_index(drop=True)
+        # add the variable ID to the star list so it can be linked to the table
+        for idx, row in known.iterrows():
+            dist = np.min(np.sqrt((star_list.x - row.x) ** 2 + (star_list.y - row.y) ** 2))
+
+            if dist < 5. / Configuration.PIXEL_SIZE:
+                min_pos = np.argmin(np.sqrt((star_list.x - row.x) ** 2 + (star_list.y - row.y) ** 2))
+                star_list.loc[min_pos, 'var_id'] = row.source_id
+
+        # list of known variable stars
+        var_list = star_list.var_id.unique().tolist()
+
+        # filter the star list
+        known_filtered = known[~known['source_id'].isin(var_list)].copy().reset_index(drop=True)
+        known_filtered = known_filtered.drop(['coords_ra', 'coords_de'], axis=1)
+        known_filtered['toros_field_id'] = Configuration.FIELD
+        known_filtered['var_id'] = known_filtered['source_id']
+
+        star_list = pd.concat([star_list, known_filtered], ignore_index=True)
 
         return star_list
 

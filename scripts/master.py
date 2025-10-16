@@ -34,38 +34,49 @@ class Master:
 
         if os.path.isfile(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt') == 0:
 
-            # create the string useful for query_region
-            field = str(Configuration.RA) + " " + str(Configuration.DEC)
+            if os.path.isfile(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt') == 0:
+                # create the string useful for query_region
+                field = str(Configuration.RA) + " " + str(Configuration.DEC)
 
-            # select the columns we want to import into the data table
-            columns = ["toros_field_id", "source_id", "ra", "dec", "phot_g_mean_mag", "phot_bp_mean_mag",
-                       "phot_rp_mean_mag", "teff_val", "parallax", "parallax_error", "pmra",
-                       "pmra_error", "pmdec", "pmdec_error"]
+                # select the columns we want to import into the data table
+                columns = ["toros_field_id", "source_id", "ra", "dec", "phot_g_mean_mag", "phot_bp_mean_mag",
+                           "phot_rp_mean_mag", "teff_val", "parallax", "parallax_error", "pmra",
+                           "pmra_error", "pmdec", "pmdec_error"]
 
-            # run the query
-            Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD), 'info')
-            catalog_data = Catalogs.query_region(field,
-                                                 radius=Configuration.SEARCH_DIST,
-                                                 catalog="Gaia").to_pandas()
-            Utils.log('Query finished. ' + str(len(catalog_data)) + ' stars found.', 'info')
+                # run the query
+                Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD), 'info')
+                catalog_data = Catalogs.query_region(field,
+                                                     radius=Configuration.SEARCH_DIST,
+                                                     catalog="Gaia").to_pandas()
+                Utils.log('Query finished. ' + str(len(catalog_data)) + ' stars found.', 'info')
 
-            # add the toros field to the catalog data
-            catalog_data['toros_field_id'] = Configuration.FIELD
+                # add the toros field to the catalog data
+                catalog_data['toros_field_id'] = Configuration.FIELD
 
-            # pull out the necessary columns
-            star_list = catalog_data[columns]
+                # pull out the necessary columns
+                star_list = catalog_data[columns]
 
-            # get the header file and convert to x/y pixel positions
-            w = WCS(master_header)
-            ra = star_list.ra.to_numpy()
-            dec = star_list.dec.to_numpy()
+                # get the header file and convert to x/y pixel positions
+                w = WCS(master_header)
+                ra = star_list.ra.to_numpy()
+                dec = star_list.dec.to_numpy()
 
-            # convert to x, y
-            x, y = w.all_world2pix(ra, dec, 0)
+                # convert to x, y
+                x, y = w.all_world2pix(ra, dec, 0)
 
-            # add the x/y to the star data frame
-            star_list['x'] = x
-            star_list['y'] = y
+                # add the x/y to the star data frame
+                star_list['x'] = x
+                star_list['y'] = y
+
+                # dump the list to file, so you don't have to keep querying Gaia
+                star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt', sep=' ')
+            else:
+                Utils.log("Reading dumped Gaia file. Delete if you want a new query.", "info")
+                # read in the dumped file
+                star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt',
+                                        sep=' ', index_col=0)
+
+            # remove the stars outside the frame
             star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
                                   (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
 
@@ -73,11 +84,13 @@ class Master:
             if Configuration.KNOWN_VARIABLES == 'Y':
                 star_list = Photometry.add_variable_list(star_list, master_header)
 
+            # centroid the star list
             star_list['xcen'], star_list['ycen'] = centroid_sources(master,
                                                                     star_list.x.to_numpy(),
                                                                     star_list.y.to_numpy(),
                                                                     box_size=5)
             bd_idxs = np.where(np.isnan(star_list.xcen) | np.isnan(star_list.ycen))
+
             if len(bd_idxs[0]) > 0:
                 for bd_idx in bd_idxs[0]:
                     star_list.loc[bd_idx, 'xcen'] = star_list.loc[bd_idx, 'x']
