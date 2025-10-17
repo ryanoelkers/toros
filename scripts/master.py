@@ -44,7 +44,8 @@ class Master:
                            "pmra_error", "pmdec", "pmdec_error"]
 
                 # run the query
-                Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD), 'info')
+                Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD),
+                          'info')
                 catalog_data = Catalogs.query_region(field,
                                                      radius=Configuration.SEARCH_DIST,
                                                      catalog="Gaia").to_pandas()
@@ -76,13 +77,13 @@ class Master:
                 star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt',
                                         sep=' ', index_col=0)
 
-            # remove the stars outside the frame
-            star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
-                                  (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
-
             # check for any "known" transients and variable star files
             if Configuration.KNOWN_VARIABLES == 'Y':
                 star_list = Photometry.add_variable_list(star_list, master_header)
+
+            # remove the stars outside the frame
+            star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
+                                  (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
 
             # centroid the star list
             star_list['xcen'], star_list['ycen'] = centroid_sources(master,
@@ -96,14 +97,27 @@ class Master:
                     star_list.loc[bd_idx, 'xcen'] = star_list.loc[bd_idx, 'x']
                     star_list.loc[bd_idx, 'ycen'] = star_list.loc[bd_idx, 'y']
 
+            # add "chip" to the star_list
+            star_list['chip'] = 1
+            kk = 1
+            for idx in range(0, Configuration.AXS_X, Configuration.CHP_X):
+                for idy in range(0, Configuration.AXS_Y, Configuration.CHP_Y):
+                    star_list['chip'] = np.where((star_list.xcen > idx) & (star_list.xcen < idx + 1320) &
+                                                 (star_list.ycen > idy) & (star_list.ycen < idy + 5280),
+                                                 kk, star_list.chip)
+                    kk = kk + 1
+
             # centroid the positions
             positions = star_list[['xcen', 'ycen']].copy().reset_index(drop=True)  # positions = (x, y)
 
             # run aperture photometry
             # set up the star aperture and sky annuli
-            aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
+            aperture = CircularAperture(positions,
+                                        r=Configuration.APER_SIZE)
+
             aperture_area = aperture.area  # the area of the aperture
-            annulus_aperture = CircularAnnulus(positions, r_in=Configuration.ANNULI_INNER,
+            annulus_aperture = CircularAnnulus(positions,
+                                               r_in=Configuration.ANNULI_INNER,
                                                r_out=Configuration.ANNULI_OUTER)
 
             # get the background stats
@@ -126,7 +140,7 @@ class Master:
             star_flux_err = np.sqrt(star_error + bkg_error)
 
             # convert to magnitude
-            mag = 25. - 2.5 * np.log10(star_flux)
+            mag = 25. - 2.5 * np.log10(star_flux / Configuration.EXP_TIME)
             mag_er = (np.log(10.) / 2.5) * (star_flux_err / star_flux)
 
             # initialize the light curve data frame

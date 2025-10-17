@@ -10,8 +10,8 @@ class Configuration:
 
     # update for different data products
     FIELD = 'FIELD_0e.001'
-    RA = 6.0223292
-    DEC = -72.0814444
+    RA = 6.2620172  # 6.0223292
+    DEC = -73.2835091  # -72.0814444
 
     # are there additional known transients or variables you want photometry for?
     KNOWN_VARIABLES = 'Y'
@@ -19,10 +19,10 @@ class Configuration:
     # steps to skip
     CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
-    MASTER_SKIP = 'N'
-    DIFFERENCE_SKIP = 'Y'
-    PHOTOMETRY_SKIP = 'Y'
-    LIGHTCURVE_SKIP = 'Y'
+    MASTER_SKIP = 'Y'
+    DIFFERENCE_SKIP = 'N'
+    PHOTOMETRY_SKIP = 'N'
+    LIGHTCURVE_SKIP = 'N'
 
     # how do you want to clean the image?
     SUBTRACT_BIAS = "Y"
@@ -37,7 +37,7 @@ class Configuration:
     NUM_PIXELS = 10560  # pixels per side
     TOROS_DEC_LIMIT = 26.66  # declination limit of the telescope in degrees
     FOV = (PIXEL_SIZE * NUM_PIXELS) / 3600.
-    SEARCH_DIST = FOV
+    SEARCH_DIST = FOV * 0.8
     EXP_TIME = 300
     GAIN = 0.380  # in e-/ADU
 
@@ -54,7 +54,7 @@ class Configuration:
     KRNL = 2  # kernel size 2 * KNRL + 1
     STMP = 10  # stamp size ot use 2 * STMP + 1
     ORDR = 1  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
-    NRSTARS = 500  # number of stars used to solve for kernel
+    NRSTARS = 1500  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
     KERNEL_LIMIT = 0.5  # the maximum allowable offset in zeropoint in magnitudes
     AXS_LIMIT = 100  # the number of pixel close to the edge of the frame to use
@@ -76,7 +76,7 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/Users/oelkerrj/PycharmProjects/toros/"
+    WORKING_DIRECTORY = "/Users/yuw816/Development/toros/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -84,11 +84,11 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/"
-    RAW_DIRECTORY = "/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
+    DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
+    RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
-    MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
+    MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"
     MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master/"
     CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"

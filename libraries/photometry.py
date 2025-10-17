@@ -34,23 +34,26 @@ class Photometry:
         """
 
         # add a column to link in star_list
-        star_list['var_id'] = ' '
+        star_list['var_id'] = '--'
+        star_list['var_type'] = '--'
+        star_list['var_period'] = 0
+        star_list['object_type'] = 'Star'
 
         # now get the variable / transient list
-        known = pd.read_csv(Configuration.MASTER_DIRECTORY +
-                            Configuration.FIELD + "_known_objects.csv", sep=",")
+        known = pd.read_csv(Configuration.MASTER_DIRECTORY + "/known_objects/"
+                            + Configuration.FIELD +"_known_objects.csv", sep=",")
 
         # update the ra and dec in the known data frame to be in degrees
-        known['ra'] = known.apply(lambda x: ((float(x['coords_ra'].split(' ')[0]) / 24) +
-                                            (float(x['coords_ra'].split(' ')[1]) / 60 / 24) +
-                                            (float(x['coords_ra'].split(' ')[2]) / 60 / 60 / 24)) * 360, axis=1)
+        known['ra'] = known.apply(lambda x: ((float(x['coords'].split(' ')[0]) / 24) +
+                                            (float(x['coords'].split(' ')[1]) / 60 / 24) +
+                                            (float(x['coords'].split(' ')[2]) / 60 / 60 / 24)) * 360, axis=1)
 
         # be careful with negative declinations, you need to subtract and not add
-        known['dec'] = known.apply(lambda x: float(x['coords_de'].split(' ')[0]) -
-                                            (float(x['coords_de'].split(' ')[1]) / 60) -
-                                            (float(x['coords_de'].split(' ')[2]) / 60 / 60) if float(x['coords_de'].split(' ')[0]) < 0 else float(x['coords_de'].split(' ')[0]) +
-                                            (float(x['coords_de'].split(' ')[1]) / 60) +
-                                            (float(x['coords_de'].split(' ')[2]) / 60 / 60), axis=1)
+        known['dec'] = known.apply(lambda x: float(x['coords'].split(' ')[3]) -
+                                            (float(x['coords'].split(' ')[4]) / 60) -
+                                            (float(x['coords'].split(' ')[5]) / 60 / 60) if float(x['coords'].split(' ')[3]) < 0 else float(x['coords'].split(' ')[3]) +
+                                            (float(x['coords'].split(' ')[4]) / 60) +
+                                            (float(x['coords'].split(' ')[5]) / 60 / 60), axis=1)
 
         # get the header file and convert to x/y pixel positions
         w = WCS(master_header)
@@ -68,16 +71,30 @@ class Photometry:
         for idx, row in known.iterrows():
             dist = np.min(np.sqrt((star_list.x - row.x) ** 2 + (star_list.y - row.y) ** 2))
 
-            if dist < 5. / Configuration.PIXEL_SIZE:
+            try:
+                nme_chk = star_list[star_list.source_id == int(row.source_id)].index.values[0]
+            except:
+                nme_chk = -99
+
+            if nme_chk >= 0:
+                star_list.loc[nme_chk, 'var_id'] = row.source_id
+                star_list.loc[nme_chk, 'var_type'] = row.var_type
+                star_list.loc[nme_chk, 'var_period'] = row.var_period
+                star_list.loc[nme_chk, 'object_type'] = row.object_type
+
+            elif (dist < 5. / Configuration.PIXEL_SIZE) & (nme_chk < 0):
                 min_pos = np.argmin(np.sqrt((star_list.x - row.x) ** 2 + (star_list.y - row.y) ** 2))
                 star_list.loc[min_pos, 'var_id'] = row.source_id
+                star_list.loc[min_pos, 'var_type'] = row.var_type
+                star_list.loc[min_pos, 'var_period'] = row.var_period
+                star_list.loc[min_pos, 'object_type'] = row.object_type
 
         # list of known variable stars
         var_list = star_list.var_id.unique().tolist()
 
         # filter the star list
         known_filtered = known[~known['source_id'].isin(var_list)].copy().reset_index(drop=True)
-        known_filtered = known_filtered.drop(['coords_ra', 'coords_de'], axis=1)
+        known_filtered = known_filtered.drop(['coords'], axis=1)
         known_filtered['toros_field_id'] = Configuration.FIELD
         known_filtered['var_id'] = known_filtered['source_id']
 
@@ -148,16 +165,6 @@ class Photometry:
         # the magnitude difference between the science frame magnitude and the master frame
         dmag = mag[~np.isnan(mag)] - m_mag[~np.isnan(mag)]
 
-        # add "chip" to the star_list
-        star_list['chip'] = 1
-        kk = 1
-        for idx in range(0, Configuration.AXS_X, Configuration.CHP_X):
-               for idy in range(0, Configuration.AXS_Y, Configuration.CHP_Y):
-                    star_list['chip'] = np.where((star_list.xcen > idx) & (star_list.xcen < idx + 1320) &
-                                                (star_list.ycen > idy) & (star_list.ycen < idy + 5280),
-                                                 kk, star_list.chip)
-                    kk = kk + 1
-
         # initialize the offset vector
         off = np.zeros(len(mag))
 
@@ -165,20 +172,14 @@ class Photometry:
         f_mags = np.arange(6, 16) + 0.5
         n_mags = np.zeros(len(f_mags))
 
-        # make sure there is an object type in the file
-        try:
-            star_list['object_type'] = np.where(star_list['object_type'].isna(), 'star', star_list['object_type'])
-        except:
-            star_list['object_type'] = 'star'
-
-        # loop through each chip to find the zeropoint offset
+        # loop through each chip to find the zero point offset
         for chp in range(1, 17):
             for mag_idx, m_lw in enumerate(f_mags):
                 # get the zeropoint using non-nan stars in the chip between the magnitude range
                 dmag_bin = dmag[(mag[~np.isnan(mag)] > m_lw) &
                                 (mag[~np.isnan(mag)] < m_lw + 1) &
                                 (star_list[~np.isnan(mag)].chip.to_numpy() == chp) &
-                                (star_list[~np.isnan(mag)].object_type.to_numpy() == 'star')]
+                                (star_list[~np.isnan(mag)].object_type.to_numpy() == 'Star')]
 
                 # sigma clip outliers
                 dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(np.array(dmag_bin, dtype=float), sigma=2)
@@ -217,17 +218,10 @@ class Photometry:
         :return - Nothing is being returned, but the raw files are output to disk
         """
 
-        # pull in the star list for the photometry
-        if Configuration.KNOWN_VARIABLES == 'Y':
-            # if there are known variables or transients get the updated star list
-            star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list_updated.txt',
-                                    delimiter=' ',
-                                    header=0)
-        else:
-            # if there are no known transients then get the old star list
-            star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
-                                    delimiter=' ',
-                                    header=0)
+        # if there are no known transients then get the old star list
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                delimiter=' ',
+                                header=0)
 
         # get the flux files to read in
         files, dates = Utils.get_all_files_per_field(Configuration.FLUX_DIRECTORY,
