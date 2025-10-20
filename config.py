@@ -20,8 +20,8 @@ class Configuration:
     CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
     MASTER_SKIP = 'Y'
-    DIFFERENCE_SKIP = 'N'
-    PHOTOMETRY_SKIP = 'N'
+    DIFFERENCE_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'Y'
     LIGHTCURVE_SKIP = 'N'
 
     # how do you want to clean the image?

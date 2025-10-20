@@ -55,8 +55,12 @@ def jstet(mg, er):
 
     return jstet, kstet, lstet
 
-star_list = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/master/"
-                        + Configuration.FIELD + "_star_list_updated.txt", sep=' ', low_memory=False, index_col=0)
+
+star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                        delimiter=' ',
+                        header=0,
+                        low_memory=False)
+
 star_list['bd_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
                                 (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 2, 0)
 # add "chip" to the star_list
@@ -69,24 +73,25 @@ for idx in range(0, Configuration.AXS_X, Configuration.CHP_X):
                                      kk, star_list.chip)
         kk = kk + 1
 
-dir = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/" + Configuration.FIELD + "/"
+dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/"
 all_files = np.sort(Utils.get_file_list(dir, '.lc'))
-
-for idx, row in star_list[9000:].iterrows():
+odir = "/Users/yuw816/Library/CloudStorage/OneDrive-TheUniversityofTexas-RioGrandeValley/Research/TOROS/lc/FIELD_0e.001/"
+# 28529
+for idx, row in star_list[28529:].iterrows():
 
     if row.bd_star == 0:
-        lc = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
-                         + Configuration.FIELD + "/" +
-                         Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
-        ok_data = sc(lc.mag, sigma=3)
 
+        lc = pd.read_csv(dir + Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
+        ok_data = sc(lc.mag, sigma=3)
+        olc = pd.read_csv(odir + Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
+        lc['phase'] = (lc.jd - lc.jd.min()) / 0.371452 % 1
         lc['flux'] = 10**((lc.mag-2.5*np.log10(300.)-25)/-2.5)
         lc['tot_flux'] = lc.flux - ((lc.sky + lc.bkg) * np.pi * Configuration.APER_SIZE ** 2)
 
         # get the similar magnitude bright stars
         star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
         star_list['dist'] = np.sqrt((star_list.y - row.y)**2 + (star_list.x - row.x)**2)
-        trend_list = star_list[(star_list.chip == row.chip) &
+        trend_list = star_list[# (star_list.chip == row.chip) &
                                (star_list.bd_star == 0) &
                                (star_list.dmag > 0) & (star_list.dmag < 2) &
                                # (star_list.dist < 4000) &
@@ -94,7 +99,7 @@ for idx, row in star_list[9000:].iterrows():
 
         cols = {}
         col_nme = []
-        sp = np.zeros(len(trend_list))
+
         kk = 0
         j = np.zeros(len(trend_list))
         k = np.zeros(len(trend_list))
@@ -102,17 +107,13 @@ for idx, row in star_list[9000:].iterrows():
 
         for idy, rw in trend_list.iterrows():
 
-            tr = pd.read_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
-                             + Configuration.FIELD + "/" +
-                             Configuration.FIELD + "_" + str(rw.source_id) + ".lc", sep=' ')
+            tr = pd.read_csv(dir + Configuration.FIELD + "_" + str(rw.source_id) + ".lc", sep=' ')
             j[idy], k[idy], l[idy] = jstet(tr[~ok_data.mask].mag.to_numpy(), tr[~ok_data.mask].err.to_numpy())
-            sp[idy], _ = spearmanr(tr[~ok_data.mask].mag.to_numpy(), lc[~ok_data.mask].mag.to_numpy())
 
-            tr['flux'] = 10 ** ((tr.mag - 2.5 * np.log10(300.) - 25) / -2.5)
-            tr['nmag'] = 25 - 2.5 * np.log10((tr.flux - (tr.bkg * np.pi * Configuration.APER_SIZE ** 2)) / 300.)
+            # tr['flux'] = 10 ** ((tr.mag - 2.5 * np.log10(300.) - 25) / -2.5)
+            # tr['nmag'] = 25 - 2.5 * np.log10((tr.flux - (tr.bkg * np.pi * Configuration.APER_SIZE ** 2)) / 300.)
 
-            cols['mag_'+str(kk)] = tr.mag.to_numpy() - (rw.master_mag + 2.5*np.log10(300))
-
+            cols['mag_'+str(kk)] = tr.mag.to_numpy() - tr.mag.median()
             col_nme.append('mag_'+str(kk))
             kk = kk + 1
 
@@ -126,28 +127,47 @@ for idx, row in star_list[9000:].iterrows():
             if not t:
                 _, off[idy], _ = scs(trs.loc[idy, col_nme], sigma=1)
 
+        sp = np.zeros(len(trend_list))
+
         for dy in dys:
             dd = (lc.jd.astype(int) == dy) & (~ok_data.mask)
-
-            xx = trs[col_nme][dd]
-            # xx = lc[['trd']][dd]
-            yy = lc[dd].mag.to_numpy()
-
-            model = LinearRegression().fit(xx, yy).predict(xx)
-
-            plt.subplot(2, 1, 1)
-            plt.scatter(lc[dd].jd, lc[dd].nmag, c='k')
-            plt.scatter(lc[dd].jd, lc[dd].trd + lc[dd].mag.median(), c='b', marker='x')
-            plt.scatter(lc[dd].jd, off[dd] + lc[dd].mag.median(), c='g', marker='x')
-
-            plt.subplot(2, 1, 2)
-            plt.scatter(lc[dd].jd, lc[dd].bkg)
-
-            print(np.std(lc[dd].mag - off[dd]), np.std(lc[dd].mag - lc[dd].trd), row.master_flux_er / row.master_flux)
-            # plt.scatter(lc[dd].jd, model, c='g', marker='x')
+            plt.scatter(lc.jd[dd], lc.mag[dd], marker='.', c='k')
+            scld = np.zeros((len(lc.jd[dd]), len(trend_list)))
+            gd = []
+            for idy, col in enumerate(col_nme):
+                sp[idy], _ = spearmanr(cols[col][dd], lc.mag[dd].to_numpy())
+                if np.abs(sp[idy]) > 0.3:
+                    gd.append(idy)
+                    if sp[idy] > 0:
+                        scld[:,idy] = ((cols[col][dd] - np.min(cols[col][dd])) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (np.max(cols[col][dd]) - np.min(cols[col][dd]))
+                    else:
+                        scld[:,idy] = ((cols[col][dd] - np.max(cols[col][dd])) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (
+                                    np.min(cols[col][dd]) - np.max(cols[col][dd]))
+                    plt.plot(lc.jd[dd], cols[col][dd] + lc.mag[dd].mean(), marker='x', c='r', alpha=0.3)
+                    plt.plot(lc.jd[dd], scld[:,idy] + lc.mag[dd].min(), marker='x', c='g', alpha=0.3)
+            fin_scl = np.median(scld[:, gd], axis=1)
+            plt.plot(lc.jd[dd], fin_scl + lc.mag[dd].min(), marker='o', c='r')
+            _, _, new = scs(lc.mag[dd] - fin_scl, sigma=2.5)
+            _, _, old = scs(lc.mag[dd] - off[dd], sigma=2.5)
+            print(new, old, row.master_flux_er / row.master_flux)
             plt.show()
 
-        lc['phase'] = (lc.jd - lc.jd.min()) / 0.371452 % 1
+            print('hold')
+            # xx = trs[col_nme][dd]
+            # xx = lc[['trd']][dd]
+            # yy = lc[dd].mag.to_numpy()
+
+            # model = LinearRegression().fit(xx, yy).predict(xx)
+
+            # plt.scatter(lc[dd].jd, lc[dd].mag, c='k')
+            # plt.scatter(lc[dd].jd, off[dd] + lc[dd].mag.median(), c='g', marker='x')
+            # plt.scatter(lc[dd].jd, model, c='red', marker='x')
+
+            # print(np.std(lc[dd].mag - off[dd]), np.std(lc[dd].mag - model), row.master_flux_er / row.master_flux)
+            # plt.scatter(lc[dd].jd, model, c='g', marker='x')
+            # plt.show()
+
+
         # plt.scatter(lc[~ok_data.mask].phase, lc[~ok_data.mask].mag - off[~ok_data.mask], c='k', marker='.')
         # plt.scatter(lc[~ok_data.mask].phase, lc[~ok_data.mask].mag - lc[~ok_data.mask].trd + 0.2, c='r', marker='.')
         # plt.show()
