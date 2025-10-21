@@ -3,9 +3,7 @@ from config import Configuration
 from libraries.utils import Utils
 from astropy.io import fits
 from astropy.stats import sigma_clipped_stats
-from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
-from photutils.aperture import aperture_photometry
+from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 import numpy as np
 import pandas as pd
 import warnings
@@ -13,11 +11,96 @@ from astropy.time import Time
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
-matplotlib.use("Qt5Agg")
+import logging
+matplotlib.set_loglevel(level = 'warning')
+matplotlib.use("TkAgg")
+pil_logger = logging.getLogger('PIL')
+pil_logger.setLevel(logging.INFO)
 import matplotlib.pyplot as plt
-import os
+from astropy.wcs import WCS
+
 
 class Photometry:
+
+    @staticmethod
+    def add_variable_list(star_list, master_header):
+        """ This function will read in the known variable star / transient list for the star field. It will get
+        master frame photometry and x/y pixel position so the stars can be written to file.
+
+        :parameter star_list - The data frame with the original star list
+        :parameter master_header - The header of the master frame
+
+        :return updated_list - The star list with the transients is returned
+        """
+
+        # add a column to link in star_list
+        star_list['var_id'] = '--'
+        star_list['var_type'] = '--'
+        star_list['var_period'] = 0
+        star_list['object_type'] = 'Star'
+
+        # now get the variable / transient list
+        known = pd.read_csv(Configuration.MASTER_DIRECTORY + "/known_objects/"
+                            + Configuration.FIELD +"_known_objects.csv", sep=",")
+
+        # update the ra and dec in the known data frame to be in degrees
+        known['ra'] = known.apply(lambda x: ((float(x['coords'].split(' ')[0]) / 24) +
+                                            (float(x['coords'].split(' ')[1]) / 60 / 24) +
+                                            (float(x['coords'].split(' ')[2]) / 60 / 60 / 24)) * 360, axis=1)
+
+        # be careful with negative declinations, you need to subtract and not add
+        known['dec'] = known.apply(lambda x: float(x['coords'].split(' ')[3]) -
+                                            (float(x['coords'].split(' ')[4]) / 60) -
+                                            (float(x['coords'].split(' ')[5]) / 60 / 60) if float(x['coords'].split(' ')[3]) < 0 else float(x['coords'].split(' ')[3]) +
+                                            (float(x['coords'].split(' ')[4]) / 60) +
+                                            (float(x['coords'].split(' ')[5]) / 60 / 60), axis=1)
+
+        # get the header file and convert to x/y pixel positions
+        w = WCS(master_header)
+        ra = known.ra.to_numpy()
+        dec = known.dec.to_numpy()
+
+        # convert to x, y
+        x, y = w.all_world2pix(ra, dec, 0)
+
+        # add the x/y to the star data frame
+        known['x'] = x
+        known['y'] = y
+
+        # add the variable ID to the star list so it can be linked to the table
+        for idx, row in known.iterrows():
+            dist = np.min(np.sqrt((star_list.x - row.x) ** 2 + (star_list.y - row.y) ** 2))
+
+            try:
+                nme_chk = star_list[star_list.source_id == int(row.source_id)].index.values[0]
+            except:
+                nme_chk = -99
+
+            if nme_chk >= 0:
+                star_list.loc[nme_chk, 'var_id'] = row.source_id
+                star_list.loc[nme_chk, 'var_type'] = row.var_type
+                star_list.loc[nme_chk, 'var_period'] = row.var_period
+                star_list.loc[nme_chk, 'object_type'] = row.object_type
+
+            elif (dist < 5. / Configuration.PIXEL_SIZE) & (nme_chk < 0):
+                min_pos = np.argmin(np.sqrt((star_list.x - row.x) ** 2 + (star_list.y - row.y) ** 2))
+                star_list.loc[min_pos, 'var_id'] = row.source_id
+                star_list.loc[min_pos, 'var_type'] = row.var_type
+                star_list.loc[min_pos, 'var_period'] = row.var_period
+                star_list.loc[min_pos, 'object_type'] = row.object_type
+
+        # list of known variable stars
+        var_list = star_list.var_id.unique().tolist()
+
+        # filter the star list
+        known_filtered = known[~known['source_id'].isin(var_list)].copy().reset_index(drop=True)
+        known_filtered = known_filtered.drop(['coords'], axis=1)
+        known_filtered['toros_field_id'] = Configuration.FIELD
+        known_filtered['var_id'] = known_filtered['source_id']
+
+        star_list = pd.concat([star_list, known_filtered], ignore_index=True)
+
+        return star_list
 
     @staticmethod
     def single_frame_aperture_photometry(star_list, img_name, fin_name):
@@ -26,6 +109,9 @@ class Photometry:
 
         :parameter star_list - The data frame with the list of stars to use for the subtraction
         :parameter img_name - The file to extract flux from
+        :parameter fin_name - The name of the output flux file
+
+        :return nothing is returned, but the flux file is written and output
         """
 
         # get the image for photometry
@@ -36,151 +122,258 @@ class Photometry:
         jd = time.jd
 
         # get the stellar positions from the master frame
-        positions = np.transpose((star_list['x'], star_list['y']))
+        positions = np.transpose((star_list['xcen'], star_list['ycen']))
 
+        # set up the aperture objects
         aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
-        aperture_annulus = CircularAnnulus(positions,
+        aperture_area = aperture.area
+        annulus_aperture = CircularAnnulus(positions,
                                            r_in=Configuration.ANNULI_INNER,
                                            r_out=Configuration.ANNULI_OUTER)
-        apers = [aperture, aperture_annulus]
+
+        # get the background stats
+        aperstats = ApertureStats(img, annulus_aperture)
+        bkg_mean = aperstats.mean
+        bkg_total = bkg_mean * aperture.area
 
         # run the photometry to get the data table
-        phot_table = aperture_photometry(img, apers, method='exact')
+        phot_table = aperture_photometry(img, aperture, method='exact')
 
         # extract the flux from the table
         # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
-        img_flux = np.array(phot_table['aperture_sum_0'])
+        star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
 
         # calculate the expected photometric error
-        star_error = np.array(np.abs(phot_table['aperture_sum_0']))
-        sky_error = header['sky'] * np.pi * Configuration.APER_SIZE ** 2
+        star_error = np.abs(star_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float))
+        bkg_error = np.abs(header['sky'] + bkg_mean) * aperture_area * Configuration.GAIN
 
         # combine sky and signal error in quadrature
-        img_flux_er = np.sqrt(star_error + sky_error)
+        star_flux_err = np.sqrt(star_error + bkg_error)
 
         # combine the fluxes
-        flux = img_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float)
-        flux_er = np.sqrt(img_flux_er.astype(float) ** 2 + star_list['master_flux_er'].to_numpy().astype(float) ** 2)
+        flux = star_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float)
+        flux_er = np.sqrt(star_flux_err.astype(float) ** 2 + star_list['master_flux_er'].to_numpy().astype(float) ** 2)
 
         # convert to magnitude
         mag = 25. - 2.5 * np.log10(flux)
+        mag_nbkg = 25. - 2.5 * np.log10(flux - bkg_total)
         mag_er = (np.log(10.) / 2.5) * (flux_er / flux)
 
-        # get the zeropoint
+        # initialize the master magnitude of all frames
         m_mag = star_list['master_mag'].to_numpy()
 
+        # the magnitude difference between the science frame magnitude and the master frame
         dmag = mag[~np.isnan(mag)] - m_mag[~np.isnan(mag)]
 
+        # initialize the offset vector
+        off = np.zeros(len(mag))
+
+        # set up holders for interpolation
         f_mags = np.arange(6, 16) + 0.5
         n_mags = np.zeros(len(f_mags))
-        for mag_idx, m_lw in enumerate(f_mags):
-            dmag_bin = dmag[np.argwhere((mag[~np.isnan(mag)] > m_lw) & (mag[~np.isnan(mag)] < m_lw + 1))]
-            dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(np.array(dmag_bin, dtype=float), sigma=2.5)
-            n_mags[mag_idx] = dmag_md
+
+        # loop through each chip to find the zero point offset
+        for chp in range(1, 17):
+            for mag_idx, m_lw in enumerate(f_mags):
+                # get the zeropoint using non-nan stars in the chip between the magnitude range
+                dmag_bin = dmag[(mag[~np.isnan(mag)] > m_lw) &
+                                (mag[~np.isnan(mag)] < m_lw + 1) &
+                                (star_list[~np.isnan(mag)].chip.to_numpy() == chp) &
+                                (star_list[~np.isnan(mag)].object_type.to_numpy() == 'Star')]
+
+                # sigma clip outliers
+                dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(np.array(dmag_bin, dtype=float), sigma=2)
+                n_mags[mag_idx] = dmag_md
+
+            # interpolate to all magnitudes
+            off[star_list.chip.to_numpy() == chp] = np.interp(mag[star_list.chip.to_numpy() == chp], f_mags, n_mags)
+
+        # now correct the magnitudes for exposure time
+        mag = mag + 2.5 * np.log10(Configuration.EXP_TIME)
 
         # replace nans with -9.999999
+        off = np.where(np.isnan(off), -9.999999, off)
         mag = np.where(np.isnan(mag), -9.999999, mag)
-        off = np.interp(mag, f_mags, n_mags)
 
         # generate the final flux file
         flux_file = star_list.copy().reset_index(drop=True)
         flux_file['flux'] = flux
         flux_file['flux_er'] = flux_er
         flux_file['mag'] = mag
+        flux_file['mag_nbkg'] = mag_nbkg
         flux_file['mag_er'] = mag_er
         flux_file['sky'] = header['SKY']
+        flux_file['bkg'] = bkg_mean
         flux_file['jd'] = jd
         flux_file['zpt'] = off
-        flux_file['cln'] = np.where(np.isnan(mag), -9.999999, mag - off)
+        flux_file['exp_time'] = Configuration.EXP_TIME
 
-        # flux_file.to_csv(fin_name, header=True, index=False)
-        flux_file.to_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Reserach/TOROS/flux/" + fin_name.split('/')[-1], header=True, index=False)
+        flux_file.to_csv(fin_name, header=True, index=False)
         return
 
     @staticmethod
-    def combine_flux_files(star_list):
-        """ This function combines the flux files in a given directory into a single data frame.
-
-        :parameter star_list- The master frame star list
+    def combine_flux_files():
+        """ Deconstruct the flux files to single files for each light curve.
 
         :return - Nothing is being returned, but the raw files are output to disk
         """
 
+        # if there are no known transients then get the old star list
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                delimiter=' ',
+                                header=0)
+
         # get the flux files to read in
-        # files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
-        #                                              Configuration.FIELD,
-        #                                              'diff',
-        #                                              '.flux')
-
-        files = Utils.get_file_list("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\flux\\", ".flux")
-        nfiles = len(files)
-
-        num_rrows = len(star_list)
+        files, dates = Utils.get_all_files_per_field(Configuration.FLUX_DIRECTORY,
+                                                     Configuration.FIELD,
+                                                     'flux',
+                                                     '.flux')
+        nfiles = len(files)  # the number of flux files to combine
+        nstars = len(star_list)  # The number of stars to generate light curves for
+        Utils.log(str(nfiles) + " flux files found for " + Configuration.FIELD + ".", "info")
 
         # make the holders for the light curves
         jd = np.zeros(nfiles)
-        mag = np.zeros((num_rrows, nfiles))
-        er = np.zeros((num_rrows, nfiles))
-        cln = np.zeros((num_rrows, nfiles))
-        zpt = np.zeros((num_rrows, nfiles))
+        mag = np.zeros((nstars, nfiles))
+        err = np.zeros((nstars, nfiles))
+        err_scl = np.zeros((nstars, nfiles))
+        trd = np.zeros((nstars, nfiles)) - 9.999999
+        zpt = np.zeros((nstars, nfiles))
+        sky = np.zeros((nstars, nfiles))
+        bkg = np.zeros((nstars, nfiles))
 
         for idy, file in enumerate(files):
 
             # read in the data frame with the flux information
-            img_flux = pd.read_csv("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\flux\\" + file, header=0)
+            img_flux = pd.read_csv(file, header=0)
+
+            if idy == 0:
+                star_list['chip'] = img_flux['chip'].to_numpy()
+                star_list['object_type'] = img_flux['object_type'].to_numpy()
 
             # set the data to the numpy array
             jd[idy] = img_flux.loc[0, 'jd']
             mag[:, idy] = img_flux['mag'].to_numpy()
-            er[:, idy] = img_flux['mag_er'].to_numpy()
-            cln[:, idy] = img_flux['cln'].to_numpy()
+            err[:, idy] = img_flux['mag_er'].to_numpy()
+            err_scl[:, idy] = img_flux['mag_er'].to_numpy()
             zpt[:, idy] = img_flux['zpt'].to_numpy()
+            sky[:, idy] = img_flux['sky'].to_numpy()
+            bkg[:, idy] = img_flux['bkg'].to_numpy()
+
+            if (idy % 100 == 0) & (idy > 0):
+                Utils.log("100 flux files read. " + str(nfiles - idy - 1) + ' files remain.', "info")
+
+        ## IF THERE IS AN OBJECT IN THE FIELD (LIKE 47-TUC) then block it
+        star_list['bd_stars'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
+                                         (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
+
+        # convert the master frame magnitude to e/s
+        star_list['master_mag'] = star_list['master_mag'] + 2.5 * np.log10(Configuration.EXP_TIME)
+        src_id = star_list.source_id.to_numpy()
+
+        for idy, row in star_list.iterrows():
+
+            # get the distance to all stars
+            dd = np.sqrt((row.xcen - star_list.xcen.to_numpy()) ** 2 +
+                         (row.ycen - star_list.ycen.to_numpy()) ** 2)
+
+            # get the difference in magnitude
+            dmag = np.abs(row.master_mag - star_list.master_mag.to_numpy())
+
+            # only get nearby stars of similar magnitude, on the same chip, aren't variables, and aren't in a bad area
+            vv = np.argwhere((dmag < 2) & (dd > 0) & (star_list['chip'] == row.chip) &
+                             (star_list['bd_stars'] == 0) & (star_list['object_type'] == 'star')).reshape(-1)
+            vv_all = np.argwhere((dmag < 0.5) & (dd > 0) &
+                                 (star_list['bd_stars'] == 0) & (star_list['object_type'] == 'star')).reshape(-1)
+
+            if len(vv) > 0:
+                # generate the trend for the trend stars
+                for idz in range(len(jd)):
+                    _, trd[idy, idz], _ = sigma_clipped_stats(mag[vv, idz] -
+                                                              star_list.loc[vv].master_mag.to_numpy(), sigma=3)
+
+            else:
+                # if no stars exist, then go ahead and use all stars in the frame, not just your chip
+                for idz in range(len(jd)):
+                    _, trd[idy, idz], _ = sigma_clipped_stats(mag[vv_all, idz] -
+                                                              star_list.loc[vv_all].master_mag.to_numpy(), sigma=3)
+
+            # get the updates error based on similar stars
+            _, _, ss = sigma_clipped_stats(mag[vv_all] - trd[idy], sigma=3, axis=1)
+            m_er, _, _ = sigma_clipped_stats(err[idy], sigma=3)
+            if len(ss) > 0:
+                sigma_scale = m_er / np.quantile(ss, 0.01)
+            else:
+                sigma_scale = 1.
+
+            # rescale the errors
+            err_scl[idy] = err[idy] / sigma_scale
+
+            if (idy % 1000 == 0) & (idy > 0):
+                Utils.log("1000 stars had their trend found. " +
+                          str(nstars - idy - 1) + " stars remain.", "info")
 
         # write out the light curve data
-        Photometry.write_light_curves(num_rrows, star_list.star_id.to_list(), jd, mag, er, cln, zpt)
+        Photometry.write_light_curves(nstars, jd, mag, err, err_scl, trd, zpt, sky, bkg, src_id)
 
         return
 
     @staticmethod
-    def write_light_curves(nstars, starid, jd, mag, er, cln, zpt):
-        """ This function will write the ETSI columns to a text file for later
+    def write_light_curves(nstars, jd, mag, er, er_scl, trd, zpt, sky, bkg, src_id):
+        """ This function will write the flux columns to light curves for each src_id
 
-        :return - Nothing is returned, but the light curve files are written
+        :parameters - nstars - the number of stars to have light curves written
+        :parameters - jd - the numpy array of julian dates (one per file)
+        :parameters - mag - the magnitudes for each star at each jd
+        :parameters - er - the photometric error for each star at each time
+        :parameters - er_scl - the photometric error for each star with scaling
+        :parameters - trd - the trend from nearby similar magnitude stars
+        :parameters - zpt - the zeropiont using all stars in the frame
+        :parameters - sky - the median sky background
+        :parameters - bkg - the local background for the source
+        :parameters - src_id - nstars long array of source ids
+
+        :return - nothing is returned, but the light curve files are written
         """
 
         # initialize the light curve data frame
-        lc = pd.DataFrame(columns=['jd', 'mag', 'er', 'cln', 'zpt'])
+        lc = pd.DataFrame(columns=['jd', 'mag', 'err', 'trd', 'zpt', 'sky', 'bkg'])
 
-        Utils.log("Starting light curve writing...", "info")
+        Utils.log("Starting light curve writing for " + str(nstars) + " stars.", "info")
 
         for idx in range(0, nstars):
-            if os.path.exists("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\lc\\" + str(idx) + ".lc"):
-                os.remove("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\lc\\" + str(idx) + ".lc")
-            if starid[idx] >= 100000:
-                lc_nme = str(starid[idx])
-            elif (starid[idx] < 100000) & (starid[idx] >= 10000):
-                lc_nme = '0' + str(starid[idx])
-            elif (starid[idx] < 10000) & (starid[idx] >= 1000):
-                lc_nme = '00' + str(starid[idx])
-            elif (starid[idx] < 1000) & (starid[idx] >= 100):
-                lc_nme = '000' + str(starid[idx])
-            elif (starid[idx] < 100) & (starid[idx] >= 10):
-                lc_nme = '0000' + str(starid[idx])
-            else:
-                lc_nme = '00000' + str(starid[idx])
+            star_id = str(src_id[idx])
 
             # add the time, magnitude and error to the data frame
             lc['jd'] = np.around(jd, decimals=6)
             lc['mag'] = np.around(mag[idx, :], decimals=6)
-            lc['er'] = np.around(er[idx, :], decimals=6)
-            lc['cln'] = np.around(cln[idx, :], decimals=6)
+            lc['err'] = np.around(er_scl[idx, :], decimals=6)
+            lc['trd'] = np.around(trd[idx, :], decimals=6)
+            lc['org_err'] = np.around(er[idx, :], decimals=6)
             lc['zpt'] = np.around(zpt[idx, :], decimals=6)
+            lc['sky'] = np.around(sky[idx, :], decimals=0)
+            lc['bkg'] = np.around(bkg[idx, :], decimals=0)
 
-            lc = lc.sort_values(by='jd')
+            # make sure the data is in order!
+            lc = lc.sort_values(by = 'jd').reset_index(drop=True)
+            lc['err'] = np.where(lc['mag'] < 0, -9.999999, lc['err'])
+            lc['org_err'] = np.where(lc['mag'] < 0, -9.999999, lc['org_err'])
+            lc['trd'] = np.where(lc['mag'] < 0, -9.999999, lc['trd'])
+            lc['zpt'] = np.where(lc['mag'] < 0, -9.999999, lc['zpt'])
+            lc['sky'] = np.where(lc['mag'] < 0, -9.999999, lc['sky'])
+            lc['bkg'] = np.where(lc['mag'] < 0, -9.999999, lc['bkg'])
+            lc['mag'] = np.where(lc['mag'] < 0, -9.999999, lc['mag'])
+
             # write the new file
-            # lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
-            #                                             Configuration.FIELD + "/" +
-            #                                             lc_nme + ".lc", sep=" ", index=False, na_rep='9.999999')
-            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\lc\\" +
-                                                         lc_nme + ".lc", sep=" ", index=False, na_rep='9.999999')
+            lc[['jd', 'mag', 'err', 'trd', 'org_err', 'zpt', 'sky', 'bkg']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
+                                                                                   Configuration.FIELD + "/" +
+                                                                                   Configuration.FIELD +"_" + star_id + ".lc",
+                                                                                   sep=" ", index=False, na_rep='-9.999999')
+
+            if (idx > 0) & (idx / 10000 % 1 == 0):
+                Utils.log("10000 stars have had their light curves written. " +
+                          str(nstars - idx - 1) + " stars remain. ", "info")
+
+        Utils.log("All light curves written.", "info")
+
         return

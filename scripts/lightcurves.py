@@ -3,15 +3,8 @@ from config import Configuration
 from libraries.utils import Utils
 from libraries.photometry import Photometry
 import os
-from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
-from photutils.aperture import aperture_photometry
-from photutils.centroids import centroid_sources
-import numpy as np
 import pandas as pd
 import warnings
-from astropy.io import fits
-from astropy.wcs import WCS
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
@@ -28,7 +21,8 @@ class Lightcurves:
         """
 
         # pull in the star list for the photometry
-        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', delimiter=' ',
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                delimiter=' ',
                                 header=0)
 
         # get the image list to difference
@@ -41,6 +35,7 @@ class Lightcurves:
         for idx, file in enumerate(files):
 
             fin_nme = file.split('.fits')[0] + '.flux'
+            fin_nme = fin_nme.replace('/diff/', '/flux/')
 
             if os.path.isfile(fin_nme) == 1:
                 Utils.log("Flux file " + fin_nme + " found. Skipping...", "info")
@@ -69,6 +64,6 @@ class Lightcurves:
                                 + Configuration.FIELD + '_star_list.txt', delimiter=' ',
                                 header=0)
         # combine the flux from the flux files, and write the raw light curves
-        Photometry.combine_flux_files(star_list)
+        Photometry.combine_flux_files()
 
         return

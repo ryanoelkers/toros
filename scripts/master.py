@@ -1,23 +1,16 @@
 from config import Configuration
 from libraries.utils import Utils
 from libraries.preprocessing import Preprocessing
+from libraries.photometry import Photometry
 import numpy as np
 import os
 from astropy.io import fits
-from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
-from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import pandas as pd
-import warnings
 from astroquery.mast import Catalogs
 from astropy.wcs import WCS
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-warnings.filterwarnings("ignore", category=Warning)
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 from astropy.stats import sigma_clipped_stats
+from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 
 
 class Master:
@@ -41,91 +34,137 @@ class Master:
 
         if os.path.isfile(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt') == 0:
 
-            # create the string useful for query_region
-            field = str(Configuration.RA) + " " + str(Configuration.DEC)
+            if os.path.isfile(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt') == 0:
+                # create the string useful for query_region
+                field = str(Configuration.RA) + " " + str(Configuration.DEC)
 
-            # select the columns we want to import into the data table
-            columns = ["toros_field_id", "source_id", "ra", "dec", "phot_g_mean_mag", "phot_bp_mean_mag",
-                       "phot_rp_mean_mag", "teff_val", "parallax", "parallax_error", "pmra",
-                       "pmra_error", "pmdec", "pmdec_error"]
+                # select the columns we want to import into the data table
+                columns = ["toros_field_id", "source_id", "ra", "dec", "phot_g_mean_mag", "phot_bp_mean_mag",
+                           "phot_rp_mean_mag", "teff_val", "parallax", "parallax_error", "pmra",
+                           "pmra_error", "pmdec", "pmdec_error"]
 
-            # run the query
-            Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD), 'info')
-            catalog_data = Catalogs.query_region(field,
-                                                 radius=Configuration.SEARCH_DIST,
-                                                 catalog="Gaia").to_pandas()
-            Utils.log('Query finished. ' + str(len(catalog_data)) + ' stars found.', 'info')
+                # run the query
+                Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD),
+                          'info')
+                catalog_data = Catalogs.query_region(field,
+                                                     radius=Configuration.SEARCH_DIST,
+                                                     catalog="Gaia").to_pandas()
+                Utils.log('Query finished. ' + str(len(catalog_data)) + ' stars found.', 'info')
 
-            # add the toros field to the catalog data
-            catalog_data['toros_field_id'] = Configuration.FIELD
+                # add the toros field to the catalog data
+                catalog_data['toros_field_id'] = Configuration.FIELD
 
-            # pull out the necessary columns
-            star_list = catalog_data[columns]
+                # pull out the necessary columns
+                star_list = catalog_data[columns]
 
-            # get the header file and convert to x/y pixel positions
-            w = WCS(master_header)
-            ra = star_list.ra.to_numpy()
-            dec = star_list.dec.to_numpy()
+                # get the header file and convert to x/y pixel positions
+                w = WCS(master_header)
+                ra = star_list.ra.to_numpy()
+                dec = star_list.dec.to_numpy()
 
-            # convert to x, y
-            x, y = w.all_world2pix(ra, dec, 0)
+                # convert to x, y
+                x, y = w.all_world2pix(ra, dec, 0)
 
-            # add the x/y to the star data frame
-            star_list['x'] = x
-            star_list['y'] = y
+                # add the x/y to the star data frame
+                star_list['x'] = x
+                star_list['y'] = y
+
+                # dump the list to file, so you don't have to keep querying Gaia
+                star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt', sep=' ')
+            else:
+                Utils.log("Reading dumped Gaia file. Delete if you want a new query.", "info")
+                # read in the dumped file
+                star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt',
+                                        sep=' ', index_col=0)
+
+            # check for any "known" transients and variable star files
+            if Configuration.KNOWN_VARIABLES == 'Y':
+                star_list = Photometry.add_variable_list(star_list, master_header)
+
+            # remove the stars outside the frame
             star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
                                   (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
 
+            # centroid the star list
             star_list['xcen'], star_list['ycen'] = centroid_sources(master,
                                                                     star_list.x.to_numpy(),
                                                                     star_list.y.to_numpy(),
                                                                     box_size=5)
             bd_idxs = np.where(np.isnan(star_list.xcen) | np.isnan(star_list.ycen))
+
             if len(bd_idxs[0]) > 0:
                 for bd_idx in bd_idxs[0]:
                     star_list.loc[bd_idx, 'xcen'] = star_list.loc[bd_idx, 'x']
                     star_list.loc[bd_idx, 'ycen'] = star_list.loc[bd_idx, 'y']
+
+            # add "chip" to the star_list
+            star_list['chip'] = 1
+            kk = 1
+            for idx in range(0, Configuration.AXS_X, Configuration.CHP_X):
+                for idy in range(0, Configuration.AXS_Y, Configuration.CHP_Y):
+                    star_list['chip'] = np.where((star_list.xcen > idx) & (star_list.xcen < idx + 1320) &
+                                                 (star_list.ycen > idy) & (star_list.ycen < idy + 5280),
+                                                 kk, star_list.chip)
+                    kk = kk + 1
 
             # centroid the positions
             positions = star_list[['xcen', 'ycen']].copy().reset_index(drop=True)  # positions = (x, y)
 
             # run aperture photometry
             # set up the star aperture and sky annuli
-            aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
-            annulus_aperture = CircularAnnulus(positions, r_in=Configuration.ANNULI_INNER,
+            aperture = CircularAperture(positions,
+                                        r=Configuration.APER_SIZE)
+
+            aperture_area = aperture.area  # the area of the aperture
+            annulus_aperture = CircularAnnulus(positions,
+                                               r_in=Configuration.ANNULI_INNER,
                                                r_out=Configuration.ANNULI_OUTER)
-            apers = [aperture, annulus_aperture]
+
+            # get the background stats
+            aperstats = ApertureStats(master, annulus_aperture)
+            bkg_mean = aperstats.mean
+            total_bkg = bkg_mean * aperture_area
 
             # run the photometry to get the data table
-            phot_table = aperture_photometry(master, apers, method='exact')
+            phot_table = aperture_photometry(master, aperture, method='exact')
 
-            # extract the sky background for each annuli based on either a global or local subtraction
-            sky = phot_table['aperture_sum_1'] / annulus_aperture.area
-
-            # subtract the sky background to get the stellar flux and square root of total flux to get the error
-            flux = np.array(phot_table['aperture_sum_0'])
+            # extract the flux from the table
+            # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
+            star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
 
             # calculate the expected photometric error
-            flux_er = np.sqrt((phot_table['aperture_sum_0']))
+            star_error = star_flux
+            bkg_error = master_header['SKY'] * aperture_area * Configuration.GAIN
+
+            # combine sky and signal error in quadrature
+            star_flux_err = np.sqrt(star_error + bkg_error)
 
             # convert to magnitude
-            mag = 25. - 2.5 * np.log10(flux)
-            mag_er = (np.log(10.) / 2.5) * (flux_er / flux)
+            mag = 25. - 2.5 * np.log10(star_flux / Configuration.EXP_TIME)
+            mag_er = (np.log(10.) / 2.5) * (star_flux_err / star_flux)
 
             # initialize the light curve data frame
             star_list['master_mag'] = mag
             star_list['master_mag_er'] = mag_er
-            star_list['master_flux'] = flux
-            star_list['master_flux_er'] = flux_er
-            star_list['sky'] = sky
+            star_list['master_flux'] = star_flux
+            star_list['master_flux_er'] = star_flux_err
+            star_list['master_sky'] = total_bkg
+
+            # only keep stars with reasonable photometry in the master list
             star_list = star_list[star_list['master_flux'] > 0]
-            star_list = star_list.sort_values(by='master_mag').reset_index()
+
+            # index is reset twice to make sure the star ID matches the brightness on the master frame
+            star_list = star_list.sort_values(by='master_mag').reset_index(drop=True).reset_index()
             star_list = star_list.rename(columns={'index': 'star_id'})
 
-            star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', sep=' ', index=False)
+            star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                             sep=' ',
+                             index=False)
 
         else:
-            star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', delimiter=' ', header=0)
+            star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                    delimiter=' ',
+                                    header=0)
 
         return star_list
 
@@ -163,12 +202,6 @@ class Master:
 
                 # get the sky background
                 sky_values[idx] = h_chk['sky']
-
-                # update the bad index if it exists
-                if h_chk['BAD_WCS'] == 'Y':
-                        bd_wcs[idx] = 1
-                else:
-                    bd_wcs[idx] = 0
 
             # get the statistics on the images
             img_mn, img_mdn, img_std = sigma_clipped_stats(sky_values, sigma=2)
@@ -235,33 +268,34 @@ class Master:
                         master_tmp, master_tmp_head = fits.getdata(image_list[jj], header=True)
 
                         if (kk == 0) & (jj == 0):
-                            block_hold[idx_cnt] = master_tmp - master_tmp_head['sky']
-                            master_header = master_tmp_head
-                            del master_tmp
-                            Utils.log("Mini file " + str(kk) + " image " + str(jj) +
-                                      " aligned. " + str(nfiles - cnt_img) + " remain.",
-                                      "info")
+                             block_hold[idx_cnt] = master_tmp - master_tmp_head['sky']
+                             master_header = master_tmp_head
+                             del master_tmp
+                             Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                       " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                       "info")
                         else:
-                            tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
-                            Utils.log("Mini file " + str(kk) + " image " + str(jj) +
-                                      " aligned. " + str(nfiles - cnt_img) + " remain.",
-                                      "info")
-                            block_hold[idx_cnt] = tmp - master_tmp_head['sky']
-                            del tmp
-                            del master_tmp
+                             tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
+                             Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                       " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                       "info")
+                             block_hold[idx_cnt] = tmp - master_tmp_head['sky']
+                             del tmp
+                             del master_tmp
 
                         cnt_img = cnt_img + 1
                         # increase the iteration
                         idx_cnt += 1
+
                     # median the data into a single file
                     hold_data[kk] = np.median(block_hold, axis=0)
                     del block_hold
                     if kk < 10:
                         fits.writeto(Configuration.MASTER_TMP_DIRECTORY + "0" + str(kk) + "_tmp_master.fits",
-                                     hold_data[kk], master_header, overwrite=True)
+                                     hold_data[kk], master_tmp_head, overwrite=True)
                     else:
                         fits.writeto(Configuration.MASTER_TMP_DIRECTORY + str(kk) + "_tmp_master.fits",
-                                     hold_data[kk], master_header, overwrite=True)
+                                     hold_data[kk], master_tmp_head, overwrite=True)
             else:
                 Utils.log("Legacy files found. Creating Master frame from these files. "
                           "Delete if you do not want this!", "info")

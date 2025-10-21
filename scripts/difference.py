@@ -5,14 +5,27 @@ from config import Configuration
 import os
 import numpy as np
 from astropy.io import fits
+from astropy.wcs import WCS
 from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
+from photutils.centroids import centroid_sources
+import astroalign as aa
 import pandas as pd
+from reproject import reproject_interp, reproject_exact
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=Warning)
+import matplotlib
+import logging
+matplotlib.set_loglevel(level = 'warning')
+matplotlib.use("TkAgg")
+pil_logger = logging.getLogger('PIL')
+pil_logger.setLevel(logging.INFO)
+
 
 class BigDiff:
 
@@ -29,6 +42,7 @@ class BigDiff:
                                                      Configuration.FIELD,
                                                      'clean',
                                                      Configuration.FILE_EXTENSION)
+        files = np.sort(files)
         nfiles = len(files)
 
         # read in the master frame information
@@ -48,7 +62,7 @@ class BigDiff:
             fin_nme = Preprocessing.mk_nme(files[ii], 'Y', 'N', 'N', 'N', 'N')
 
             if os.path.isfile(fin_nme) == 1:
-                Utils.log("File " + fin_nme + " found. Skipping...", "info")
+                 Utils.log("File " + fin_nme + " found. Skipping...", "info")
 
             # check to see if the differenced file already exists
             if os.path.isfile(fin_nme) == 0:
@@ -63,6 +77,7 @@ class BigDiff:
     def diff_img(star_list, file, out_name):
         """ This function will check for and determine the reference stars. It will then difference the image.
 
+        :parameter star_list - The current star list on the image
         :parameter file - The file name to difference.
         :parameter out_name - The final file name.
 
@@ -73,11 +88,75 @@ class BigDiff:
         org_img, org_header = fits.getdata(file, header=True)
 
         # read in the master frame header to align the images
-        master_header = fits.getheader(Configuration.MASTER_DIRECTORY + Configuration.FIELD + "_master.fits")
+        master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY + Configuration.FIELD + "_master.fits", header=True)
 
         # write the new image file
         img_sbkg = org_img - org_header['SKY']
-        img_align = Preprocessing.align_img(img_sbkg, org_header, master_header)
+        # remove stars near 47 Tuc and the small cluster
+
+        diff_list = star_list.copy().reset_index(drop=True)
+
+        # get the header file and convert to x/y pixel positions
+        w = WCS(org_header)
+        ra = star_list.ra.to_numpy()
+        dec = star_list.dec.to_numpy()
+
+        # convert to x, y
+        x, y = w.all_world2pix(ra, dec, 0)
+
+        # add the x/y to the star data frame
+        diff_list['x'] = x
+        diff_list['y'] = y
+
+        diff_list['bd_star'] = np.where((diff_list['x'] > 4300) & (diff_list['x'] < 9300) &
+                                         (diff_list['y'] > 3600) & (diff_list['y'] < 8200), 1, 0)
+        diff_list['bd_star'] = np.where((diff_list['x'] > 1200) & (diff_list['x'] < 1900) &
+                                          (diff_list['y'] > 5100) & (diff_list['y'] < 5600), 2,
+                                         diff_list['bd_star'])
+        diff_list['bd_star'] = np.where((diff_list['y'] < 1000) | (diff_list['y'] > 9000), 3
+                                         , diff_list['bd_star'])
+        diff_list['bd_star'] = np.where((diff_list['x'] < 1000) | (diff_list['x'] > 9000), 3
+                                        , diff_list['bd_star'])
+
+        diff_list = diff_list[diff_list.bd_star == 0].copy().reset_index(drop=True)
+        ## END REMOVAL FOR NON-47TUC FIELDS!!!!
+
+        # make a magnitude cut
+        diff_list = diff_list[(diff_list.phot_g_mean_mag < 18) &
+                              (diff_list.master_mag > 7)].copy().reset_index(drop=True)
+
+        # centroid the star list
+        diff_list['xcen'], diff_list['ycen'] = centroid_sources(img_sbkg,
+                                                                diff_list.x.to_numpy(),
+                                                                diff_list.y.to_numpy(),
+                                                                box_size=11)
+        bd_idxs = np.where(np.isnan(diff_list.xcen) | np.isnan(diff_list.ycen))
+
+        if len(bd_idxs[0]) > 0:
+            diff_list = diff_list[~diff_list.isin(bd_idxs)]
+
+        # now check for non-crowded stars
+        diff_list['prox'] = diff_list.apply(lambda x: np.sort(np.sqrt((x.xcen - diff_list.xcen) ** 2 +
+                                                                      (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
+        diff_list = diff_list[diff_list.prox > (2 * Configuration.STMP + 1)].copy().reset_index(drop=True)
+
+        src = np.zeros((len(diff_list), 2))
+        dst = np.zeros((len(diff_list), 2))
+        for idx, row in diff_list.iterrows():
+            src[idx, 0] = row.xcen
+            src[idx, 1] = row.ycen
+            dst[idx, 0] = star_list[star_list.star_id == row.star_id].xcen.values[0]
+            dst[idx, 1] = star_list[star_list.star_id == row.star_id].ycen.values[0]
+
+        tform = aa.estimate_transform('affine', src, dst)
+
+        img_align, footprint = aa.apply_transform(tform, img_sbkg, master)
+
+        # img_align = Preprocessing.align_img(img_sbkg, org_header, master_header)
+        # img_align, footprint = reproject_interp((img_sbkg, org_header), master_header,
+        #                                         shape_out=img_sbkg.shape)
+        #img_align[np.isnan(img_align)] = 0
+
         org_header['WCSAXES'] = master_header['WCSAXES']
         org_header['CRPIX1'] = master_header['CRPIX1']
         org_header['CRPIX2'] = master_header['CRPIX2']
@@ -100,7 +179,7 @@ class BigDiff:
         org_header['ALIGNED'] = 'Y'
 
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
-                     img_align, org_header, overwrite=True)
+                        img_align, org_header, overwrite=True)
 
         # get the kernel stars for the subtraction
         nstars = BigDiff.find_subtraction_stars_img(img_align, star_list)
@@ -195,51 +274,58 @@ class BigDiff:
         # remove stars near 47 Tuc and the small cluster
 
         diff_list['bd_star'] = np.where((diff_list['xcen'] > 4300) & (diff_list['xcen'] < 9300) &
-                                        (diff_list['ycen'] > 3600) & (diff_list['ycen'] < 8200), 1, 0)
+                                        (diff_list['ycen'] > 3600) & (diff_list['ycen'] < 8200),
+                                        1, 0)
         diff_list['bd_star'] = np.where((diff_list['xcen'] > 1200) & (diff_list['xcen'] < 1900) &
-                                         (diff_list['ycen'] > 5100) & (diff_list['ycen'] < 5600), 2,
-                                        diff_list['bd_star'])
+                                        (diff_list['ycen'] > 5100) & (diff_list['ycen'] < 5600),
+                                        2, diff_list['bd_star'])
+        diff_list['bd_star'] = np.where((diff_list['ycen'] < 1000) | (diff_list['ycen'] > 9000),
+                                        3, diff_list['bd_star'])
+        diff_list['bd_star'] = np.where((diff_list['xcen'] < 1000) | (diff_list['xcen'] > 9000),
+                                        3, diff_list['bd_star'])
         diff_list = diff_list[diff_list.bd_star == 0].copy().reset_index(drop=True)
+
         ## END REMOVAL FOR NON-47TUC FIELDS!!!!
+
 
         # now check for stars based on their magnitude differences
         positions = np.transpose((diff_list['xcen'], diff_list['ycen']))
-
         aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
-        aperture_annulus = CircularAnnulus(positions,
-                                           r_in=Configuration.ANNULI_INNER,
-                                           r_out=Configuration.ANNULI_OUTER)
-        apers = [aperture, aperture_annulus]
 
         # run the photometry to get the data table
-        phot_table = aperture_photometry(img, apers, method='exact')
+        phot_table = aperture_photometry(img, aperture, method='exact')
 
-        # the global background was subtracted, and teh master mangitude does not have exposure time corrected
-        flux = np.array(phot_table['aperture_sum_0'])
+        # the global background was subtracted, and teh master magnitude does not have exposure time corrected
+        flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
 
         # convert to magnitude
-        mag = 25 - 2.5 * np.log10(flux)
+        mag = 25 - 2.5 * np.log10(flux / Configuration.EXP_TIME)
 
-        # clip likely variables (large changes from master frame)
+        # clip likely variables, these objects have large magnitudes changes relative to the master frame
         diff_list['dmag'] = diff_list['master_mag'].to_numpy() - mag
-        dmn, dmd, dsg = sigma_clipped_stats(diff_list.dmag, sigma=2)
+
+        # the clip will be 2 sigma-clipping above and below the mean offset
+        dmn, dmd, dsg = sigma_clipped_stats(diff_list.dmag, sigma=3)
         dmag_plus = dmd + dsg
         dmag_minus = dmd - dsg
-
-        # now clip the stars to begin the subtraction
         diff_list = diff_list[(diff_list['dmag'] < dmag_plus) &
-                              (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
+                                   (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
+
+        # make a magnitude cut
+        diff_list = diff_list[(diff_list.phot_g_mean_mag < 17) &
+                                (diff_list.master_mag > 7)].copy().reset_index(drop=True)
+
+        # make the variable cutoff
+        diff_list = diff_list[diff_list.var_type == '--'].copy().reset_index(drop=True)
 
         # now check for non-crowded stars
         diff_list['prox'] = diff_list.apply(lambda x: np.sort(np.sqrt((x.xcen - diff_list.xcen) ** 2 +
-                                                                        (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
+                                                                      (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
         diff_list = diff_list[diff_list.prox > (2 * Configuration.STMP + 1)].copy().reset_index(drop=True)
-
-        # make a magnitude cut
-        diff_list = diff_list[diff_list.master_mag > 10].copy().reset_index(drop=True)
 
         if len(diff_list) > Configuration.NRSTARS:
             diff_list = diff_list.sample(n=Configuration.NRSTARS)
+            # diff_list = diff_list[0:Configuration.NRSTARS]
             nstars = Configuration.NRSTARS
         else:
             nstars = len(diff_list)

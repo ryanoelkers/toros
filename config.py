@@ -4,20 +4,17 @@
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'moon'
+    MACHINE = 'mac_studio'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
     # update for different data products
     FIELD = 'FIELD_0e.001'
-    RA = 6.0223292
-    DEC = -72.0814444
+    RA = 6.2620172  # 6.0223292
+    DEC = -73.2835091  # -72.0814444
 
-    # is there a transient you want the light curve for?
-    TRANSIENT_LC = 'Y'
-    TRANSIENT_NAME = 'AT2024xsq' # 'AT2024xhm'  # 'AT2024ykx' #
-    TRANSIENT_RA = 10.1958012 # 46.9968525  # 307.422951333 #
-    TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
+    # are there additional known transients or variables you want photometry for?
+    KNOWN_VARIABLES = 'Y'
 
     # steps to skip
     CLEAN_SKIP = 'Y'
@@ -27,12 +24,20 @@ class Configuration:
     PHOTOMETRY_SKIP = 'Y'
     LIGHTCURVE_SKIP = 'N'
 
+    # how do you want to clean the image?
+    SUBTRACT_BIAS = "Y"
+    SUBTRACT_DARK = "Y"
+    DIVIDE_FLAT = "Y"
+    CLIP_IMAGE = "Y"
+    SUBTRACT_SKY = "Y"
+    PLATE_SOLVE = "Y"
+
     # telescope information
     PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
     NUM_PIXELS = 10560  # pixels per side
     TOROS_DEC_LIMIT = 26.66  # declination limit of the telescope in degrees
     FOV = (PIXEL_SIZE * NUM_PIXELS) / 3600.
-    SEARCH_DIST = FOV
+    SEARCH_DIST = FOV * 0.8
     EXP_TIME = 300
     GAIN = 0.380  # in e-/ADU
 
@@ -42,12 +47,14 @@ class Configuration:
     AXS_X = 10560
     AXS_Y = 10560
     AXS = 10560
+    CHP_X = 1320
+    CHP_Y = 5280
 
     # update the differencing information, primarily the number of stars to use, and the kernel size
     KRNL = 2  # kernel size 2 * KNRL + 1
     STMP = 10  # stamp size ot use 2 * STMP + 1
-    ORDR = 0  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
-    NRSTARS = 4000  # number of stars used to solve for kernel
+    ORDR = 1  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
+    NRSTARS = 1500  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
     KERNEL_LIMIT = 0.5  # the maximum allowable offset in zeropoint in magnitudes
     AXS_LIMIT = 100  # the number of pixel close to the edge of the frame to use
@@ -69,33 +76,35 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "C:\\Users\\ryanj\\Development\\toros\\"
-    ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts\\'
-    ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis\\'
-    LOG_DIRECTORY = WORKING_DIRECTORY + 'logs\\'
-    QUERIES_DIRECTORY = WORKING_DIRECTORY + 'queries\\'
-    CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference\\'
+    WORKING_DIRECTORY = "/Users/yuw816/Development/toros/"
+    ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
+    ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
+    LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
+    QUERIES_DIRECTORY = WORKING_DIRECTORY + 'queries/'
+    CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\TOROS\\"
-    RAW_DIRECTORY = "C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\TOROS\\"
-    CLEAN_DIRECTORY = DATA_DIRECTORY + "clean\\"
-    MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master\\"
-    MASTER_DIRECTORY = DATA_DIRECTORY + "master\\" + FIELD + "\\"
-    MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master\\"
-    CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids\\"
-    CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration\\"
-    BIAS_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_bias\\"
-    FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat\\"
-    DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark\\"
-    LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc\\"
-    DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff\\"
+    DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
+    RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
+    CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
+    MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
+    MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"
+    MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master/"
+    CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
+    CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
+    BIAS_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_bias/"
+    FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat/"
+    DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark/"
+    LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
+    LIGHTCURVE_FIELD_DIRECTORY = LIGHTCURVE_DIRECTORY + FIELD + "/"
+    DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
+    FLUX_DIRECTORY = DATA_DIRECTORY + "flux/"
 
     # directory_list
-    DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
+    DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY, FLUX_DIRECTORY,
                    QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_MAIN_DIRECTORY, MASTER_DIRECTORY, MASTER_TMP_DIRECTORY,
                    LIGHTCURVE_DIRECTORY, CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY,
-                   FLAT_DIRECTORY, DIFFERENCED_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
+                   FLAT_DIRECTORY, DIFFERENCED_DIRECTORY, CODE_DIFFERENCE_DIRECTORY, LIGHTCURVE_FIELD_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS
     LISTEN_NED_WAIT = 1
