@@ -26,10 +26,19 @@ class Lightcurves:
                                 header=0)
 
         # get the image list to difference
-        files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
+        files, date_dirs = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
                                                      Configuration.FIELD,
                                                      'diff',
                                                      Configuration.FILE_EXTENSION)
+
+        # make the output directories for the flux files
+        output_dirs = []
+
+        for dte in date_dirs:
+            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte + "/" + Configuration.FIELD)
+
+        Utils.create_directories(output_dirs)
 
         # begin the algorithm to produce the photometry
         for idx, file in enumerate(files):
@@ -40,7 +49,7 @@ class Lightcurves:
             if os.path.isfile(fin_nme) == 1:
                 Utils.log("Flux file " + fin_nme + " found. Skipping...", "info")
 
-            # check to see if the differenced file already exists
+            # check to see if the flux file already exists
             if os.path.isfile(fin_nme) == 0:
 
                 Utils.log("Working to extract flux from " + file + ".", "info")
@@ -58,12 +67,11 @@ class Lightcurves:
         """
 
         # pull in the star list for the photometry
-        # star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', delimiter=' ',
-        #                         header=0)
-        star_list = pd.read_csv("C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\master\\"
-                                + Configuration.FIELD + '_star_list.txt', delimiter=' ',
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                delimiter=' ',
                                 header=0)
+
         # combine the flux from the flux files, and write the raw light curves
-        Photometry.combine_flux_files()
+        Photometry.combine_flux_files(star_list)
 
         return

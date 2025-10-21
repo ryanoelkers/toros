@@ -212,16 +212,13 @@ class Photometry:
         return
 
     @staticmethod
-    def combine_flux_files():
+    def combine_flux_files(star_list):
         """ Deconstruct the flux files to single files for each light curve.
+
+        :parameter star_list - The star list to be used for photometry
 
         :return - Nothing is being returned, but the raw files are output to disk
         """
-
-        # if there are no known transients then get the old star list
-        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
-                                delimiter=' ',
-                                header=0)
 
         # get the flux files to read in
         files, dates = Utils.get_all_files_per_field(Configuration.FLUX_DIRECTORY,

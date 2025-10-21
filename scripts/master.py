@@ -22,6 +22,10 @@ class Master:
         :return - The master frame is returned and the star list is printed
         """
 
+        ra_center, dec_center, reference_image = Preprocessing.find_alignment_position()
+
+        Preprocessing.align_images(ra_center, dec_center, reference_image)
+
         master, master_header = Master.mk_master()
 
         star_list = Master.master_phot(master, master_header)

@@ -42,8 +42,24 @@ class BigDiff:
                                                      Configuration.FIELD,
                                                      'clean',
                                                      Configuration.FILE_EXTENSION)
+
+        # get the file list for all dates the FIELD was observed
+        Utils.log("Getting file list to make directories", "info")
+        files, date_dirs = Utils.get_all_files_per_field(Configuration.RAW_DIRECTORY,
+                                                         Configuration.FIELD,
+                                                         'raw',
+                                                         Configuration.FILE_EXTENSION)
         files = np.sort(files)
         nfiles = len(files)
+
+        # make the output directories for the difference files
+        output_dirs = []
+
+        for dte in date_dirs:
+            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
+
+        Utils.create_directories(output_dirs)
 
         # read in the master frame information
         master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY +
@@ -212,8 +228,9 @@ class BigDiff:
 
         # update the header file
         dimg, diff_header = fits.getdata('dimg.fits', header=True)
-        header['diffed'] = 'Y'
-        header['nstars'] = nstars
+        header['diffed'] = 'Y'  # update the header to show the difference
+        header['nstars'] = nstars  # update the header to show the number of kernel stars
+        dimg = dimg.astype(np.float32)  # update the image to be FLOAT32, we don't need FLOAT64
 
         # now mask the missing master frame parts #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
         dimg[0:490, :] = 0

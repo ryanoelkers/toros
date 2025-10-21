@@ -1,4 +1,4 @@
-""" This script will clean the FFI images, it has been significantly reduced to only
+""" This script will clean the TOROS images, it has been significantly reduced to only
 show specific steps. The majority of the functional library can be found in the libraries
 directory in utils, fits, photometry, image, and preprocessing libraries."""
 from libraries.utils import Utils
@@ -28,16 +28,12 @@ class Clean:
                                                          'raw',
                                                          Configuration.FILE_EXTENSION)
 
-        # make the output directories for the clean, difference, and flux files
+        # make the output directories for the clean files
         output_dirs = []
 
         for dte in date_dirs:
             output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte)
             output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte + "/" + Configuration.FIELD)
-            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
-            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
-            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte)
-            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte + "/" + Configuration.FIELD)
 
         Utils.create_directories(output_dirs)
         # break if there are no files
@@ -84,6 +80,8 @@ class Clean:
 
         fn = time.time()  # clock stopped
         Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
+
+        return
 
     @staticmethod
     def clean_img(file):
