@@ -99,6 +99,7 @@ class Configuration:
     LIGHTCURVE_FIELD_DIRECTORY = LIGHTCURVE_DIRECTORY + FIELD + "/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
     FLUX_DIRECTORY = DATA_DIRECTORY + "flux/"
+    ONE_DRIVE = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/"
 
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY, FLUX_DIRECTORY,
@@ -113,7 +114,7 @@ class Configuration:
     SEEING = 0.93  # assumes 2 pix FWHM
 
     # sky brightness at TOLAR in SDSS griz
-    SKY = [22.1, 21.1, 20.1, 18.7]
+    SKY = [22.3, 21.2, 20.5, 19.6]
 
     # SDSS griz bandpass values in nm (width of the filter)
     BP = [147, 141, 147, 147]

@@ -5,170 +5,104 @@ from libraries.utils import Utils
 matplotlib.set_loglevel(level = 'warning')
 matplotlib.use("TkAgg")
 pil_logger = logging.getLogger('PIL')
-pil_logger.setLevel(logging.INFO)
+pil_logger.setLevel(logging.WARNING)
 import matplotlib.pyplot as plt
 from config import Configuration
 import numpy as np
 from astropy.stats import sigma_clipped_stats as scs
-import os
-from scipy.signal import medfilt
 from scipy.stats import spearmanr
-import gc
-from astropy.timeseries import LombScargle
 from astropy.stats import sigma_clip as sc
-from random import choices
+from scipy.optimize import minimize
 from sklearn.linear_model import LinearRegression
-
-def jstet(mg, er):
-
-    wk = 1.0  # Weighting Factor
-
-    MeanMag = np.mean(mg)
-    nms = len(mg)
-
-    Jt = np.arange(nms) * 0.0
-    Jb = np.arange(nms) * 0.0
-    Kt = np.arange(nms) * 0.0
-    Kb = np.arange(nms) * 0.0
-
-    for i in range(0, nms-2, 2):
-
-        Sigi = (mg[i] - MeanMag) / (er[i]) * (np.sqrt(nms / (nms - 1)))
-        Sigj = (mg[i + 1] - MeanMag) / (er[i + 1]) * (np.sqrt(nms / (nms - 1)))
-
-        Pk = Sigi * Sigj  # pg 853 Stetson 1996 Eq 2 Kinemuchi
-        if Pk > 0.0:
-            sgnPk = 1.0
-        if Pk == 0.0:
-            sgnPk = 0.0
-        if Pk < 0.0:
-            sgnPk = -1.0
-
-        Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
-        Jb[i] = (wk)  # Kinemuchi eq.1 (Denominator)
-        Kt[i] = abs(Sigi)  # Kinemuchi eq.5 (Numerator)
-        Kb[i] = abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
-
-    jstet = sum(Jt) / sum(Jb)  # Eq 1
-    kstet = ((1.0 / nms) * sum(Kt)) / (np.sqrt((1.0 / nms) * sum(Kb)))  # Eq 5
-    lstet = jstet * kstet / (0.7908)
-
-    return jstet, kstet, lstet
-
-
+from sklearn.model_selection import train_test_split
+from astropy.timeseries import LombScargle
 star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
                         delimiter=' ',
                         header=0,
                         low_memory=False)
 
-star_list['bd_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
-                                (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 2, 0)
-# add "chip" to the star_list
-star_list['chip'] = 1
-kk = 1
-for idx in range(0, Configuration.AXS_X, Configuration.CHP_X):
-    for idy in range(0, Configuration.AXS_Y, Configuration.CHP_Y):
-        star_list['chip'] = np.where((star_list.xcen > idx) & (star_list.xcen < idx + 1320) &
-                                     (star_list.ycen > idy) & (star_list.ycen < idy + 5280),
-                                     kk, star_list.chip)
-        kk = kk + 1
+star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
+                                (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
+chk_list = star_list[star_list.chip == 1].copy().reset_index(drop=True)
 
 dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/"
 all_files = np.sort(Utils.get_file_list(dir, '.lc'))
-odir = "/Users/yuw816/Library/CloudStorage/OneDrive-TheUniversityofTexas-RioGrandeValley/Research/TOROS/lc/FIELD_0e.001/"
+
 # 28529
-for idx, row in star_list[28529:].iterrows():
+ntr_stars = 100
+f = open(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + '_errors.txt', 'w')
+for idx, row in star_list.iterrows():
 
-    if row.bd_star == 0:
+    lc = pd.read_csv(dir + Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
+    ok_data = sc(lc.mag, sigma=3)
+    ok_data.mask[np.argwhere(lc.mag < 0)] = True
 
-        lc = pd.read_csv(dir + Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
-        ok_data = sc(lc.mag, sigma=3)
-        olc = pd.read_csv(odir + Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
-        lc['phase'] = (lc.jd - lc.jd.min()) / 0.371452 % 1
-        lc['flux'] = 10**((lc.mag-2.5*np.log10(300.)-25)/-2.5)
-        lc['tot_flux'] = lc.flux - ((lc.sky + lc.bkg) * np.pi * Configuration.APER_SIZE ** 2)
+    lc['day'] = lc.jd.astype(int)
 
-        # get the similar magnitude bright stars
-        star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
-        star_list['dist'] = np.sqrt((star_list.y - row.y)**2 + (star_list.x - row.x)**2)
+    # get the similar magnitude bright stars
+    star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
+    star_list['dist'] = np.sqrt((star_list.y - row.y) ** 2 + (star_list.x - row.x) ** 2)
+
+    if row.gc_star == 0:
         trend_list = star_list[# (star_list.chip == row.chip) &
-                               (star_list.bd_star == 0) &
-                               (star_list.dmag > 0) & (star_list.dmag < 2) &
-                               # (star_list.dist < 4000) &
-                               (star_list.object_type != 'Var') & (star_list.object_type != 'Xray')].copy().reset_index(drop=True)
+                               (star_list.gc_star == 0) &
+                               # (star_list.dmag > 0) &
+                               (star_list.dist > Configuration.APER_SIZE) &
+                               (star_list.object_type == 'Star')].copy().sort_values(by='dmag')[0:ntr_stars].reset_index(drop=True)
+    else:
+        trend_list = star_list[# (star_list.chip == row.chip) &
+                               # (star_list.gc_star == 0) &
+                               # (star_list.dmag > 0) &
+                               (star_list.dist > Configuration.APER_SIZE) &
+                               (star_list.object_type == 'Star')].copy().sort_values(by='dmag')[0:ntr_stars].reset_index(drop=True)
 
-        cols = {}
-        col_nme = []
-
-        kk = 0
-        j = np.zeros(len(trend_list))
-        k = np.zeros(len(trend_list))
-        l = np.zeros(len(trend_list))
-
-        for idy, rw in trend_list.iterrows():
-
-            tr = pd.read_csv(dir + Configuration.FIELD + "_" + str(rw.source_id) + ".lc", sep=' ')
-            j[idy], k[idy], l[idy] = jstet(tr[~ok_data.mask].mag.to_numpy(), tr[~ok_data.mask].err.to_numpy())
-
-            # tr['flux'] = 10 ** ((tr.mag - 2.5 * np.log10(300.) - 25) / -2.5)
-            # tr['nmag'] = 25 - 2.5 * np.log10((tr.flux - (tr.bkg * np.pi * Configuration.APER_SIZE ** 2)) / 300.)
-
-            cols['mag_'+str(kk)] = tr.mag.to_numpy() - tr.mag.median()
+    cols = {}
+    col_nme = []
+    dys = np.unique(lc.jd.to_numpy().astype(int))
+    kk = 0
+    mst_mag = []
+    for idy, rw in trend_list.iterrows():
+        tr = pd.read_csv(dir + Configuration.FIELD + "_" + str(rw.source_id) + ".lc", sep=' ')
+        if len(tr[tr.mag > 0]) >= len(tr[~ok_data.mask]):
+            cols['mag_' + str(kk)] = tr.mag.to_numpy() - tr[tr.mag > 0].mag.mean()
             col_nme.append('mag_'+str(kk))
             kk = kk + 1
 
-        _, jm, js = scs(j, sigma=1)
-        trs = pd.DataFrame(cols)
-        dys = np.unique(lc.jd.to_numpy().astype(int))
+    df = pd.DataFrame(cols, columns=col_nme)
+    col_nme = np.array(col_nme)
 
-        off = np.zeros(len(lc))
+    _, mdn_mag, mn_std_mag = scs(lc[~ok_data.mask].mag, sigma=2.5)
 
-        for idy, t in enumerate(ok_data.mask):
-            if not t:
-                _, off[idy], _ = scs(trs.loc[idy, col_nme], sigma=1)
+    for dy in dys:
+        dd = (lc.jd.astype(int) == dy) & (~ok_data.mask)
 
-        sp = np.zeros(len(trend_list))
+        spr = df[dd].corrwith(lc[dd].mag, axis=0).values
 
-        for dy in dys:
-            dd = (lc.jd.astype(int) == dy) & (~ok_data.mask)
-            plt.scatter(lc.jd[dd], lc.mag[dd], marker='.', c='k')
-            scld = np.zeros((len(lc.jd[dd]), len(trend_list)))
-            gd = []
-            for idy, col in enumerate(col_nme):
-                sp[idy], _ = spearmanr(cols[col][dd], lc.mag[dd].to_numpy())
-                if np.abs(sp[idy]) > 0.3:
-                    gd.append(idy)
-                    if sp[idy] > 0:
-                        scld[:,idy] = ((cols[col][dd] - np.min(cols[col][dd])) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (np.max(cols[col][dd]) - np.min(cols[col][dd]))
-                    else:
-                        scld[:,idy] = ((cols[col][dd] - np.max(cols[col][dd])) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (
-                                    np.min(cols[col][dd]) - np.max(cols[col][dd]))
-                    plt.plot(lc.jd[dd], cols[col][dd] + lc.mag[dd].mean(), marker='x', c='r', alpha=0.3)
-                    plt.plot(lc.jd[dd], scld[:,idy] + lc.mag[dd].min(), marker='x', c='g', alpha=0.3)
-            fin_scl = np.median(scld[:, gd], axis=1)
-            plt.plot(lc.jd[dd], fin_scl + lc.mag[dd].min(), marker='o', c='r')
-            _, _, new = scs(lc.mag[dd] - fin_scl, sigma=2.5)
-            _, _, old = scs(lc.mag[dd] - off[dd], sigma=2.5)
-            print(new, old, row.master_flux_er / row.master_flux)
-            plt.show()
+        if len(spr[spr > 0.9]) >= 10:
+            trd = df[dd][col_nme[spr >= 0.9]].median(axis=1)
+        else:
+            if len(spr) >= 10:
+                trd = df[dd][col_nme[spr >= np.sort(spr)[-10]]].median(axis=1)
+            else:
+                trd = df[dd][col_nme].median(axis=1)
+        lc.loc[dd, 'trd'] = np.around(trd, decimals=6)
+        _, _, std_mag = scs(lc[dd].mag - lc[dd].trd, sigma=2.5)
+        if (std_mag < mn_std_mag) & (std_mag > 0):
+            mn_std_mag = std_mag
 
-            print('hold')
-            # xx = trs[col_nme][dd]
-            # xx = lc[['trd']][dd]
-            # yy = lc[dd].mag.to_numpy()
+    lc = lc.drop(['org_err', 'zpt', 'day'], axis=1)
+    lc = lc.rename(columns={'mag': 'raw'})
+    lc['mag'] = np.around(lc['raw'] - lc['trd'], decimals=6)
+    lc = lc[['jd', 'mag', 'err', 'raw', 'trd', 'sky', 'bkg']]
 
-            # model = LinearRegression().fit(xx, yy).predict(xx)
+    line = (Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc" + ' ' +
+            str(np.around(mdn_mag, decimals=4)) + ' ' + str(np.around(mn_std_mag, decimals=4)) + ' ' +
+            str(np.around(lc[~ok_data.mask].err.mean(), decimals=4)) + "\n")
+    f.write(line)
+    lc.to_csv(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + '_cln/' +
+              Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", index=False, sep=' ')
 
-            # plt.scatter(lc[dd].jd, lc[dd].mag, c='k')
-            # plt.scatter(lc[dd].jd, off[dd] + lc[dd].mag.median(), c='g', marker='x')
-            # plt.scatter(lc[dd].jd, model, c='red', marker='x')
+    if idx % 1000 == 0:
+        Utils.log('IDX: ' + str(idx) + ' cleaned. '+ str(len(star_list) - idx) + ' stars remain to be cleaned.', 'info')
 
-            # print(np.std(lc[dd].mag - off[dd]), np.std(lc[dd].mag - model), row.master_flux_er / row.master_flux)
-            # plt.scatter(lc[dd].jd, model, c='g', marker='x')
-            # plt.show()
-
-
-        # plt.scatter(lc[~ok_data.mask].phase, lc[~ok_data.mask].mag - off[~ok_data.mask], c='k', marker='.')
-        # plt.scatter(lc[~ok_data.mask].phase, lc[~ok_data.mask].mag - lc[~ok_data.mask].trd + 0.2, c='r', marker='.')
-        # plt.show()
-        print('hold')
+f.close()

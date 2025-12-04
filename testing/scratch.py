@@ -1,3 +1,158 @@
+ls = LombScargle(lc[~ok_data.mask].jd.to_numpy(),
+                 lc[~ok_data.mask].mag.to_numpy(),
+                 dy=lc[~ok_data.mask].err.to_numpy())
+
+frequency, power = ls.autopower()
+
+shfl_mags = lc[~ok_data.mask].mag.to_numpy()
+
+mx_power = np.zeros(1000)
+for ii in range(0, 1000):
+    ss = np.random.choice(shfl_mags, len(shfl_mags), replace=True)
+    ss_f, ss_p = LombScargle(lc[~ok_data.mask].jd.to_numpy(),
+                             ss,
+                             dy=lc[~ok_data.mask].err.to_numpy()).autopower()
+    mx_power[ii] = np.max(ss_p)
+
+pwr5 = power[np.flip(np.argsort(power))][0:5]
+prd5 = 1. / frequency[np.flip(np.argsort(power))][0:5]
+fap5 = np.zeros(5)
+for ii in range(0, 5):
+    fap5[ii] = len(mx_power[mx_power >= pwr5[ii]])
+
+# get J stet
+wk = 1.0  # Weighting Factor
+
+MeanMag = lc[~ok_data.mask].mag.mean()
+
+mg = lc[~ok_data.mask].mag.to_numpy()
+MeanMag = np.mean(mg)
+er = lc[~ok_data.mask].err.to_numpy()
+nms = len(lc[~ok_data.mask].jd.to_numpy())
+
+Jt = np.arange(nms) * 0.0
+Jb = np.arange(nms) * 0.0
+Kt = np.arange(nms) * 0.0
+Kb = np.arange(nms) * 0.0
+
+for i in range(0, nms - 2, 2):
+
+    Sigi = (mg[i] - MeanMag) / (er[i]) * (np.sqrt(nms / (nms - 1)))
+    Sigj = (mg[i + 1] - MeanMag) / (er[i + 1]) * (np.sqrt(nms / (nms - 1)))
+
+    Pk = Sigi * Sigj  # pg 853 Stetson 1996 Eq 2 Kinemuchi
+    if Pk > 0.0:
+        sgnPk = 1.0
+    if Pk == 0.0:
+        sgnPk = 0.0
+    if Pk < 0.0:
+        sgnPk = -1.0
+
+    Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
+    Jb[i] = (wk)  # Kinemuchi eq.1 (Denominator)
+    Kt[i] = abs(Sigi)  # Kinemuchi eq.5 (Numerator)
+    Kb[i] = abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
+
+jstet = sum(Jt) / sum(Jb)  # Eq 1
+kstet = ((1.0 / nms) * sum(Kt)) / (np.sqrt((1.0 / nms) * sum(Kb)))  # Eq 5
+lstet = jstet * kstet / (0.7908)
+
+dys = np.unique(lc[~ok_data.mask].jd.to_numpy().astype(int))
+jstet_dys = np.zeros(len(dys))
+lstet_dys = np.zeros(len(dys))
+kstet_dys = np.zeros(len(dys))
+
+for jj in range(0, len(dys)):
+    # get J stet
+    wk = 1.0  # Weighting Factor
+
+    mg = lc[(~ok_data.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].mag.to_numpy()
+    MeanMag = np.mean(mg)
+    er = lc[(~ok_data.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].err.to_numpy()
+    nms = len(lc[(~ok_data.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].jd.to_numpy())
+
+    Jt = np.arange(nms) * 0.0
+    Jb = np.arange(nms) * 0.0
+    Kt = np.arange(nms) * 0.0
+    Kb = np.arange(nms) * 0.0
+
+    for i in range(0, nms - 2, 2):
+
+        Sigi = (mg[i] - MeanMag) / (er[i]) * (np.sqrt(nms / (nms - 1)))
+        Sigj = (mg[i + 1] - MeanMag) / (er[i + 1]) * (np.sqrt(nms / (nms - 1)))
+
+        Pk = Sigi * Sigj  # pg 853 Stetson 1996 Eq 2 Kinemuchi
+        if Pk > 0.0:
+            sgnPk = 1.0
+        if Pk == 0.0:
+            sgnPk = 0.0
+        if Pk < 0.0:
+            sgnPk = -1.0
+
+        Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
+        Jb[i] = (wk)  # Kinemuchi eq.1 (Denominator)
+        Kt[i] = abs(Sigi)  # Kinemuchi eq.5 (Numerator)
+        Kb[i] = abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
+
+    jstet_dys[jj] = sum(Jt) / sum(Jb)  # Eq 1
+    kstet_dys[jj] = ((1.0 / nms) * sum(Kt)) / (np.sqrt((1.0 / nms) * sum(Kb)))  # Eq 5
+    lstet_dys[jj] = jstet * kstet / (0.7908)
+
+Utils.log("star clock", "info")
+passer = 0
+for idz, col in enumerate(col_nme[spr > 0.8]):
+
+    yy = df[dd][col].to_numpy()
+
+    reg = LinearRegression().fit(xx, yy).predict(xx)
+    cur_std = df[dd].sub(reg, axis=0).std().sum()
+    if cur_std < min_std:
+        min_std = cur_std
+        trd = reg
+        passer = 1
+
+Utils.log("end clock " + str(passer), "info")
+
+try:
+    lc.loc[dd, 'zpt'] = trd
+except:
+    print('hold')
+
+# for idy, col in enumerate(col_nme):
+# plt.plot(lc[dd].jd, df[dd][col],  c='k')
+# plt.scatter(lc[dd].jd, lc[dd].mag - lc[dd].mag[0], c='r')
+# plt.show()
+
+scl_data = np.zeros((100, len(lc.jd[dd])))
+
+sp = np.zeros(100)
+
+for idy, col in enumerate(col_nme):
+    sp[idy], _ = spearmanr(cols[col][dd], lc.mag[dd].to_numpy())
+
+    if (sp[idy] >= 0):
+        x0 = np.array([np.min(cols[col][dd]), np.max(cols[col][dd])])
+    else:
+        x0 = np.array([np.max(cols[col][dd]), np.min(cols[col][dd])])
+
+    scl_data[idy, :] = ((cols[col][dd] - x0[0]) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (x0[1] - x0[0])
+
+wmn_scl = np.average(scl_data[~np.isnan(sp) & (sp != 0)],
+                     weights=np.abs(sp[~np.isnan(sp) & (sp != 0)]),
+                     axis=0)
+
+
+def scale_mags(x):
+    scaled_data = ((wmn_scl - x[0]) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (x[1] - x[0])
+    _, _, sc_std = scs(lc.mag[dd] - scaled_data, sigma=2)
+    return sc_std  # np.std(lc.mag[dd] - scaled_data)
+
+
+x0 = np.array([np.min(wmn_scl), np.max(wmn_scl)])
+res = minimize(scale_mags, x0)
+fin_scl = ((wmn_scl - res.x[0]) * (np.max(lc.mag[dd]) - np.min(lc.mag[dd]))) / (res.x[1] - res.x[0])
+# lc.loc[dd, 'zpt'] = fin_scl
+
 # Define your custom handler here.
 # @gcn.include_notice_types(
 #    gcn.notice_types.LVC_EARLY_WARNING,

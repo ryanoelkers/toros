@@ -17,29 +17,41 @@ from astropy.timeseries import LombScargle
 from astropy.stats import sigma_clip as sc
 from random import choices
 import astropy.units as u
+
 # remove stars near 47 Tuc and the small cluster
-star_list = pd.read_csv("/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/master/"
-                        + Configuration.FIELD + "_star_list_updated.txt", sep=' ', low_memory=False, index_col=0)
-bd_star = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
-                   (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
+star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                        delimiter=' ',
+                        header=0,
+                        low_memory=False)
 
-for idx in range(167940, len(star_list)):
+f = open(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + '_varstats.txt', 'w')
+f.write('name mag rms d90 Jstet Lstet p1 pwr1 fap1 p2 pwr2 fap2 p3 pwr3 fap3 p4 pwr4 fap4 p5 pwr5 fap5 '
+        'J1 J2 J3 J4 J5 J6 J7 J8 J9 J10 J11 J12 J13 J14 J15 J16 J17\n')
 
-    lc = pd.read_csv("/Users/oelkerrj/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/lc/"
-                     + Configuration.FIELD + "/" +
-                     Configuration.FIELD +"_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
-    lc['cln'] = lc.mag.to_numpy() - lc.trd.to_numpy()
+for idx in range(0, len(star_list)):
 
-    clp = sc(lc.cln.to_numpy(), sigma=3)
+    lc = pd.read_csv(Configuration.LIGHTCURVE_DIRECTORY +
+                     Configuration.FIELD + '_cln/' +
+                     Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
 
+    # clip the data based on outlier protection
+    clp = sc(lc.mag.to_numpy(), sigma=3)
+
+    # get the sigma-clipped rms
+    tmag, _, rms = scs(lc[~clp.mask].mag, sigma=2.5)
+
+    # get the amplitude (d90)
+    d90 = np.percentile(lc[~clp.mask].mag, 95) - np.percentile(lc[~clp.mask].mag, 5)
+
+    # get the top 5 periods
     ls = LombScargle(lc[~clp.mask].jd.to_numpy(),
-                     lc[~clp.mask].mag.to_numpy() - lc[~clp.mask].trd.to_numpy(),
+                     lc[~clp.mask].mag.to_numpy(),
                      dy=lc[~clp.mask].err.to_numpy())
 
     frequency, power = ls.autopower()
 
-    shfl_mags = lc[~clp.mask].cln.to_numpy()
-
+    # get the FAP
+    shfl_mags = lc[~clp.mask].mag.to_numpy()
     mx_power = np.zeros(1000)
     for ii in range(0, 1000):
         ss = np.random.choice(shfl_mags, len(shfl_mags), replace=True)
@@ -54,20 +66,18 @@ for idx in range(167940, len(star_list)):
     for ii in range(0, 5):
         fap5[ii] = len(mx_power[mx_power >= pwr5[ii]])
 
-    # get J stet
+    # get J & L stet
     wk = 1.0  # Weighting Factor
 
-    MeanMag = np.mean(clp)
-
-    mg = lc[~clp.mask].cln.to_numpy()
+    mg = lc[~clp.mask].mag.to_numpy()
     MeanMag = np.mean(mg)
     er = lc[~clp.mask].err.to_numpy()
     nms = len(lc[~clp.mask].jd.to_numpy())
 
-    Jt = np.arange(nms) * 0.0
-    Jb = np.arange(nms) * 0.0
-    Kt = np.arange(nms) * 0.0
-    Kb = np.arange(nms) * 0.0
+    Jt = np.zeros(nms)
+    Jb = np.zeros(nms)
+    Kt = np.zeros(nms)
+    Kb = np.zeros(nms)
 
     for i in range(0, nms-2, 2):
 
@@ -83,34 +93,32 @@ for idx in range(167940, len(star_list)):
             sgnPk = -1.0
 
         Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
-        Jb[i] = (wk)  # Kinemuchi eq.1 (Denominator)
-        Kt[i] = abs(Sigi)  # Kinemuchi eq.5 (Numerator)
-        Kb[i] = abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
+        Jb[i] = wk  # Kinemuchi eq.1 (Denominator)
+        Kt[i] = np.abs(Sigi)  # Kinemuchi eq.5 (Numerator)
+        Kb[i] = np.abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
 
-    jstet = sum(Jt) / sum(Jb)  # Eq 1
-    kstet = ((1.0 / nms) * sum(Kt)) / (np.sqrt((1.0 / nms) * sum(Kb)))  # Eq 5
-    lstet = jstet * kstet / (0.7908)
+    jstet = np.sum(Jt) / np.sum(Jb)  # Eq 1
+    kstet = ((1.0 / nms) * np.sum(Kt)) / (np.sqrt((1.0 / nms) * np.sum(Kb)))  # Eq 5
+    lstet = jstet * kstet / 0.7908
 
-    dys = np.unique(lc[~clp.mask].jd.to_numpy().astype(int))
+    # do Jstet LStet per day
+    if idx == 0:
+        dys = np.unique(lc[~clp.mask].jd.to_numpy().astype(int))
     jstet_dys = np.zeros(len(dys))
-    lstet_dys = np.zeros(len(dys))
-    kstet_dys = np.zeros(len(dys))
 
     for jj in range(0, len(dys)):
         # get J stet
         wk = 1.0  # Weighting Factor
 
-        MeanMag = np.mean(clp)
-
-        mg = lc[(~clp.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].cln.to_numpy()
+        mg = lc[(~clp.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].mag.to_numpy()
         MeanMag = np.mean(mg)
         er = lc[(~clp.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].err.to_numpy()
         nms = len(lc[(~clp.mask) & (lc.jd.to_numpy().astype(int) == dys[jj])].jd.to_numpy())
 
-        Jt = np.arange(nms) * 0.0
-        Jb = np.arange(nms) * 0.0
-        Kt = np.arange(nms) * 0.0
-        Kb = np.arange(nms) * 0.0
+        Jt = np.zeros(nms)
+        Jb = np.zeros(nms)
+        Kt = np.zeros(nms)
+        Kb = np.zeros(nms)
 
         for i in range(0, nms-2, 2):
 
@@ -125,96 +133,34 @@ for idx in range(167940, len(star_list)):
             if Pk < 0.0:
                 sgnPk = -1.0
 
-            Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
-            Jb[i] = (wk)  # Kinemuchi eq.1 (Denominator)
-            Kt[i] = abs(Sigi)  # Kinemuchi eq.5 (Numerator)
-            Kb[i] = abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
+            Jt[i] = wk * sgnPk * (np.sqrt(np.abs(Pk)))  # Kinemuchi eq.1 (Numerator)
+            Jb[i] = wk  # Kinemuchi eq.1 (Denominator)
 
-        jstet_dys[jj] = sum(Jt) / sum(Jb)  # Eq 1
-        kstet_dys[jj] = ((1.0 / nms) * sum(Kt)) / (np.sqrt((1.0 / nms) * sum(Kb)))  # Eq 5
-        lstet_dys[jj] = jstet * kstet / (0.7908)
+        if np.sum(Jb) != 0:
+            jstet_dys[jj] = np.sum(Jt) / np.sum(Jb)  # Eq 1
+        else:
+            jstet_dys[jj] = 0
 
-# get the light curve list and then read in light curves and get the rms values
-# files = Utils.get_file_list(Configuration.LIGHTCURVE_FIELD_DIRECTORY, '.lc')
-# lc = pd.read_csv(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + "/" +
-#                  Configuration.FIELD + "_4689821167286415744.lc", sep=' ')
-# ph = (lc.jd - np.min(lc.jd)) / 0.59484267 % 1
-#
-# plt.figure(figsize=[9,6])
-# plt.subplot(2, 1, 1)
-# plt.scatter(lc[lc.mag > 0].jd - 2460000., lc[lc.mag > 0].mag - lc[lc.mag > 0].trd, c='k', marker='.')
-# plt.ylim([15.9, 15.1])
-# plt.ylabel('T')
-# plt.xlabel('JD - 246000 [d]')
-# plt.title('AQ-Tuc P=0.59484d')
-# plt.subplot(2, 1, 2)
-# plt.errorbar(ph[lc.mag > 0], lc[lc.mag > 0].mag - lc[lc.mag > 0].trd, yerr=lc[lc.mag > 0].err, c='k', fmt='none')
-# plt.scatter(ph[lc.mag > 0], lc[lc.mag > 0].mag - lc[lc.mag > 0].trd, c='k', marker='.')
-# plt.ylim([15.9, 15.1])
-# plt.xlim([0,1])
-# plt.ylabel('T')
-# plt.xlabel('Phase')
-# plt.show()
-#
-# lc = pd.read_csv(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + "/" +
-#                  Configuration.FIELD + "_4689579240377005184.lc", sep=' ')
-# ph = (lc.jd - np.min(lc.jd)) / 0.37143 % 1
-#
-# plt.figure(figsize=[9,6])
-# plt.subplot(2, 1, 1)
-# plt.scatter(lc[lc.mag > 0].jd - 2460000., lc[lc.mag > 0].mag - lc[lc.mag > 0].trd, c='k', marker='.')
-# plt.ylim([19.75, 19.])
-# plt.ylabel('T')
-# plt.xlabel('JD - 246000 [d]')
-# plt.title('CO-Tuc P=0.37143d')
-# plt.subplot(2, 1, 2)
-# plt.errorbar(ph[lc.mag > 0], lc[lc.mag > 0].mag - lc[lc.mag > 0].trd, yerr=lc[lc.mag > 0].err, c='k', fmt='none')
-# plt.scatter(ph[lc.mag > 0], lc[lc.mag > 0].mag - lc[lc.mag > 0].trd, c='k', marker='.')
-# plt.ylim([19.75, 19.])
-# plt.xlim([0,1])
-# plt.ylabel('T')
-# plt.xlabel('Phase')
-# plt.show()
+    f.write(Configuration.FIELD + "_" + str(star_list.loc[idx].source_id) + ".lc" + ' ' +
+            str(np.around(tmag, decimals=4)) + ' ' + str(np.around(rms, decimals=4)) + ' ' +
+            str(np.around(d90, decimals=4)) + ' ' + str(np.around(jstet, decimals=4)) + ' ' +
+            str(np.around(lstet, decimals=4)) + ' ' +
+            str(np.around(prd5[0], decimals=4)) + ' ' + str(np.around(pwr5[0], decimals=4)) + ' ' + str(np.around(fap5[0], decimals=4)) + ' ' +
+            str(np.around(prd5[1], decimals=4)) + ' ' + str(np.around(pwr5[1], decimals=4)) + ' ' + str(np.around(fap5[1], decimals=4)) + ' ' +
+            str(np.around(prd5[2], decimals=4)) + ' ' + str(np.around(pwr5[2], decimals=4)) + ' ' + str(np.around(fap5[2], decimals=4)) + ' ' +
+            str(np.around(prd5[3], decimals=4)) + ' ' + str(np.around(pwr5[3], decimals=4)) + ' ' + str(np.around(fap5[3], decimals=4)) + ' ' +
+            str(np.around(prd5[4], decimals=4)) + ' ' + str(np.around(pwr5[4], decimals=4)) + ' ' + str(np.around(fap5[4], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[0], decimals=4)) + ' ' + str(np.around(jstet_dys[1], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[2], decimals=4)) + ' ' + str(np.around(jstet_dys[3], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[4], decimals=4)) + ' ' + str(np.around(jstet_dys[5], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[6], decimals=4)) + ' ' + str(np.around(jstet_dys[7], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[8], decimals=4)) + ' ' + str(np.around(jstet_dys[9], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[10], decimals=4)) + ' ' + str(np.around(jstet_dys[11], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[12], decimals=4)) + ' ' + str(np.around(jstet_dys[13], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[14], decimals=4)) + ' ' + str(np.around(jstet_dys[15], decimals=4)) + ' ' +
+            str(np.around(jstet_dys[16], decimals=4)) + '\n')
 
-rms = np.zeros(167940)
-mg = np.zeros(167940)
-err1 = np.zeros(167940)
-err2 = np.zeros(167940)
-bin_st = 5
-for idx in range(0, 167940, bin_st):
-    if os.path.exists(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + "/" +
-                     Configuration.FIELD +"_" + str(star_list.loc[idx].source_id) + ".lc"):
-        lc = pd.read_csv(Configuration.LIGHTCURVE_DIRECTORY + Configuration.FIELD + "/" +
-                         Configuration.FIELD +"_" + str(star_list.loc[idx].source_id) + ".lc", sep=' ')
-        _, _, rms[int(idx / bin_st)] = scs(lc[(lc.jd < 2460585.) & (lc.mag > 0)].mag -
-                                     lc[(lc.jd < 2460585.) & (lc.mag > 0)].trd, sigma=3)
-        flx = 10 ** ((lc[lc.mag > 0].mag.median() - 25 - 2.5*np.log10(300)) / (-2.5))
-        err1[int(idx / bin_st)] = np.median(lc[lc.mag > 0].org_err)
-        err2[int(idx / bin_st)] = np.sqrt(flx) / flx
-        mg[int(idx / bin_st)] = star_list.loc[idx].master_mag
-
-        del lc
-
-    if (idx > 0) & (idx % 1000 == 0):
-        Utils.log("1000 stars read in. " + str(len(star_list) - idx - 1) + ".", 'info')
-        gc.collect()
-
-mm = mg[mg > 0]
-s2 = err2[mg > 0]
-s1 = err1[mg > 0]
-rms = rms[mg > 0]
-ss = np.average([s2, s1], axis=0, weights=[1, 0.25])
-tt = medfilt(ss, 25)
-rr = medfilt(s2, 25)
-kk = medfilt(s1, 25)
-plt.scatter(mm+ 0.634924, rms, marker='.', c='k', alpha=0.2)
-plt.plot(mm+ 0.634924, kk, marker='.', c='blue')
-plt.plot(mm+ 0.634924, tt, marker='.', c='orange')
-plt.plot(mm+ 0.634924, rr, marker='.', c='r')
-plt.ylabel('rms')
-plt.xlabel('T$_G$')
-plt.yscale('log')
-plt.ylim([0.002, 3])
-plt.xlim([8, 22.5])
-plt.show()
-print('hold')
+    if idx % 1000 == 0:
+        Utils.log('Varstats calculated for ' + str(idx + 1) + 'stars. ' + str(len(star_list) - 1) + ' stars remain.',
+                  'info')
+f.close()

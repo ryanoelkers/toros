@@ -5,6 +5,22 @@ from lsst.rsp import get_tap_service
 
 service = get_tap_service("tap")
 assert service is not None
+
+query = """SELECT coord_ra, coord_dec, g_psfMag, g_psfMagErr, 
+        i_psfMag, i_psfMagErr, r_psfMag, r_psfMagErr, detect_isisoldated
+        FROM dp1.Object
+        WHERE CONTAINS(POINT('ICRS', coord_ra, coord_dec),
+        CIRCLE('ICRS', 53, -28, 0.01)) = 1"""
+
+job = service.submit_job(query)
+job.run()
+job.wait(phases=['COMPLETED', 'ERROR'])
+print('Job phase is', job.phase)
+if job.phase == 'ERROR':
+    job.raise_if_error()
+assert job.phase == 'COMPLETED'
+results = job.fetch_result().to_table()
+
 filter_names = ['u', 'g', 'r', 'i', 'z', 'y']
 filter_colors = get_multiband_plot_colors()
 filter_symbols = get_multiband_plot_symbols()

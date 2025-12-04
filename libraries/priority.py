@@ -630,19 +630,20 @@ class Priority:
         return toros_fields
 
     @staticmethod
-    def signal_to_noise(exp_time, ab_brightness, number_of_reads):
+    def signal_to_noise(exp_time, ab_brightness, number_of_reads, mirror_diameter):
         """ This function will calculate the TOROS signal to noise ratio for the given exposure time and
         ab_brightness of the object.
 
         :parameter exp_time - The exposure time in seconds of the observation
         :parameter ab_brightness - The AB brightness of the object as a scalar or array
         :parameter number_of_reads - The number of reads for the exposure (default = 1).
+        :parameter mirror_diameter - The effective collecting diameter of the primary mirror
 
         :return snr_total - The total SNR of the exposure is returned
         """
 
         # calculate the telscopes area
-        telescope_area = Configuration.TOROS_MIRROR_R ** 2 * np.pi
+        telescope_area = (mirror_diameter / 2) ** 2 * np.pi
         telescope_aperture = np.pi * ((2.04 * Configuration.SEEING) / 2.0) ** 2
 
         # calculate flux from a zero magnitude star
@@ -674,4 +675,4 @@ class Priority:
         snr = np.sum(signal_specific_source) / ((np.sum(signal_specific_source) + np.sum(signal_sky) +
                                                  number_of_reads * readnoise_aperture) ** (1.0 / 2.0))
 
-        return snr_per_band, snr
+        return snr_per_band[0], snr_per_band[1], snr_per_band[2], snr_per_band[3], snr
