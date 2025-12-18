@@ -16,7 +16,7 @@ import numpy as np
 import statistics
 
 # read in the star list
-star_list = pd.read_csv(Configuration.ONE_DRIVE + 'master\\' + Configuration.FIELD + '\\' + Configuration.FIELD + '_star_list.txt',
+star_list = pd.read_csv(Configuration.ONE_DRIVE + 'master/' + Configuration.FIELD + '/' + Configuration.FIELD + '_star_list.txt',
                         delimiter=' ',
                         header=0,
                         low_memory=False)
@@ -24,7 +24,7 @@ star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] 
                                 (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
 
 # read in the uncertainties file
-errors = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_errors.txt',
+errors = pd.read_csv(Configuration.ONE_DRIVE + 'varstats/' + Configuration.FIELD + '_errors.txt',
                          delimiter=' ',
                          names=['name', 'mag', 'rms', 'erms'],
                          low_memory=False)
@@ -32,7 +32,7 @@ errors['gc_star'] = star_list['gc_star'].to_numpy()
 errors['var_type'] = star_list['var_type'].to_numpy()
 
 # read in the varstats file
-varstats = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_varstats.txt',
+varstats = pd.read_csv(Configuration.ONE_DRIVE + 'varstats/' + Configuration.FIELD + '_varstats.txt',
                        delimiter=' ',
                        header=0,
                        low_memory=False)
@@ -40,6 +40,28 @@ varstats['gc_star'] = star_list['gc_star'].to_numpy()
 varstats['var_type'] = star_list['var_type'].to_numpy()
 varstats['x'] = star_list['xcen'].to_numpy()
 varstats['y'] = star_list['ycen'].to_numpy()
+
+erms = errors[(varstats.gc_star == 0) & (varstats.var_type == '--') & (varstats.rms < 5) & (varstats.rms > 0)].erms.to_numpy()
+mags = errors[(varstats.gc_star == 0) & (varstats.var_type == '--') & (varstats.rms < 5) & (varstats.rms > 0)].mag.to_numpy()
+rms = varstats[(varstats.gc_star == 0) & (varstats.var_type == '--') & (varstats.rms < 5) & (varstats.rms > 0)].rms.to_numpy()
+
+erms = erms[np.argsort(mags)]
+rms = rms[np.argsort(mags)]
+mags = mags[np.argsort(mags)]
+
+offset = np.zeros(13)
+mgs = np.arange(14, 27)
+for ii in mgs:
+    ok = np.argwhere((mags > ii) & (mags < ii + 1))
+    offset[ii-14] = np.median(rms[ok] / erms[ok])
+
+
+vv = np.interp(mags, mgs, offset)
+# plt.scatter(mags, (rms/erms) / pp1(mags), marker='.', c='k')
+plt.scatter(mags, (rms/erms) / vv, marker='.', c='k', alpha=0.1)
+plt.plot(mags, vv, c='r')
+plt.yscale('log')
+plt.show()
 
 plt.scatter(varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].Jstet /
             varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].Lstet,
@@ -124,7 +146,7 @@ for idx, row in varstats.iterrows():
         # determine basic variability testing
         var_metric = row.Jstet / row.Lstet
 
-        lc = pd.read_csv(Configuration.ONE_DRIVE + "lc\\" + Configuration.FIELD + "\\" + row['name'], sep=' ', header=0)
+        lc = pd.read_csv(Configuration.ONE_DRIVE + "lc/" + Configuration.FIELD + "/" + row['name'], sep=' ', header=0)
         ok_data = sc(lc.mag, sigma=3)
         ok_data.mask[np.argwhere(lc.mag == 0)] = True
         ok_data.mask[np.argwhere(lc.mag > 25)] = True
