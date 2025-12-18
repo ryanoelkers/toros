@@ -24,16 +24,29 @@ star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] 
                                 (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
 
 # read in the uncertainties file
-error_list = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_errors.txt',
+errors = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_errors.txt',
                          delimiter=' ',
-                         header=0,
+                         names=['name', 'mag', 'rms', 'erms'],
                          low_memory=False)
+errors['gc_star'] = star_list['gc_star'].to_numpy()
+errors['var_type'] = star_list['var_type'].to_numpy()
 
 # read in the varstats file
 varstats = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_varstats.txt',
                        delimiter=' ',
                        header=0,
                        low_memory=False)
+varstats['gc_star'] = star_list['gc_star'].to_numpy()
+varstats['var_type'] = star_list['var_type'].to_numpy()
+varstats['x'] = star_list['xcen'].to_numpy()
+varstats['y'] = star_list['ycen'].to_numpy()
+
+plt.scatter(varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].Jstet /
+            varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].Lstet,
+            varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].rms,
+            c=varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].mag)
+plt.colorbar()
+plt.show()
 
 # the calculated zeropoints
 zpt_gg = 5.53
@@ -107,17 +120,18 @@ for idx, row in varstats.iterrows():
     p4_pass = 0
     p5_pass = 0
 
-    # determine basic variability testing
-    var_metric = row.Jstet / row.Lstet
-    if row['name'] == 'FIELD_0e.001_AQ_Tuc.lc':
-        print('hold')
-    if var_metric > var_metric_cutoff:
+    if (row.rms > 5) & (row.gc_star == 0) & (row.var_type == '--'):
+        # determine basic variability testing
+        var_metric = row.Jstet / row.Lstet
+
         lc = pd.read_csv(Configuration.ONE_DRIVE + "lc\\" + Configuration.FIELD + "\\" + row['name'], sep=' ', header=0)
         ok_data = sc(lc.mag, sigma=3)
-        ok_data.mask[np.argwhere(lc.mag < 0)] = True
+        ok_data.mask[np.argwhere(lc.mag == 0)] = True
         ok_data.mask[np.argwhere(lc.mag > 25)] = True
 
+        _, _, rms = scs(lc[~ok_data.mask].mag, sigma=2.5)
         plt.scatter(lc[~ok_data.mask].jd, lc[~ok_data.mask].mag, c='k')
+        plt.title(str(rms))
         plt.gca().invert_yaxis()
         plt.show()
 

@@ -36,6 +36,8 @@ for idx in range(0, len(star_list)):
 
     # clip the data based on outlier protection
     clp = sc(lc.mag.to_numpy(), sigma=3)
+    clp.mask[np.argwhere(lc.mag == 0)] = True
+    clp.mask[np.argwhere(lc.mag >= 25)] = True
 
     # get the sigma-clipped rms
     tmag, _, rms = scs(lc[~clp.mask].mag, sigma=2.5)
