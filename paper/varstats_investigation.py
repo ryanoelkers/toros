@@ -41,34 +41,8 @@ varstats['var_type'] = star_list['var_type'].to_numpy()
 varstats['x'] = star_list['xcen'].to_numpy()
 varstats['y'] = star_list['ycen'].to_numpy()
 
-erms = errors[(varstats.gc_star == 0) & (varstats.var_type == '--') & (varstats.rms < 5) & (varstats.rms > 0)].erms.to_numpy()
-mags = errors[(varstats.gc_star == 0) & (varstats.var_type == '--') & (varstats.rms < 5) & (varstats.rms > 0)].mag.to_numpy()
-rms = varstats[(varstats.gc_star == 0) & (varstats.var_type == '--') & (varstats.rms < 5) & (varstats.rms > 0)].rms.to_numpy()
-
-erms = erms[np.argsort(mags)]
-rms = rms[np.argsort(mags)]
-mags = mags[np.argsort(mags)]
-
-offset = np.zeros(13)
-mgs = np.arange(14, 27)
-for ii in mgs:
-    ok = np.argwhere((mags > ii) & (mags < ii + 1))
-    offset[ii-14] = np.median(rms[ok] / erms[ok])
-
-
-vv = np.interp(mags, mgs, offset)
-# plt.scatter(mags, (rms/erms) / pp1(mags), marker='.', c='k')
-plt.scatter(mags, (rms/erms) / vv, marker='.', c='k', alpha=0.1)
-plt.plot(mags, vv, c='r')
-plt.yscale('log')
-plt.show()
-
-plt.scatter(varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].Jstet /
-            varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].Lstet,
-            varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].rms,
-            c=varstats[(varstats.gc_star == 0) & (varstats.var_type == '--')].mag)
-plt.colorbar()
-plt.show()
+nonvars = varstats[(varstats.gc_star == 0) & (varstats.rms < 0.2) &
+                   (varstats.rms > 0) & (varstats.var_type == '--')].copy().reset_index(drop=True)
 
 # the calculated zeropoints
 zpt_gg = 5.53
@@ -77,19 +51,19 @@ zpt_r = 5.55
 zpt_i = 5.62
 
 # Get the J/L cutoff
-cnts, binns = np.histogram(varstats[varstats.Jstet > 0].Jstet.to_numpy() / varstats[varstats.Jstet > 0].Lstet.to_numpy(),
-                           bins=np.around(np.sqrt(len(varstats[varstats.Jstet > 0])), decimals=0).astype(int))
+cnts, binns = np.histogram(nonvars.Jstet.to_numpy() / nonvars.Lstet.to_numpy(),
+                           bins=np.around(np.sqrt(len(nonvars)), decimals=0).astype(int))
 
 # get the sigma, mean, median from 3 sigma clipping
-comp_mean, comp_median, comp_std = scs(varstats[varstats.Jstet > 0].Jstet.to_numpy() /
-                                       varstats[varstats.Jstet > 0].Lstet.to_numpy(),
+comp_mean, comp_median, comp_std = scs(nonvars.Jstet.to_numpy() /
+                                       nonvars.Lstet.to_numpy(),
                                        sigma=3)
 comp_max = binns[np.argmax(cnts)]
 var_metric_cutoff = comp_max + 2 * comp_std
 
 # plt.figure(figsize=(9, 6))
-# plt.hist(varstats.Jstet[varstats.Jstet > 0].to_numpy() / varstats[varstats.Jstet > 0].Lstet.to_numpy(),
-#          bins=np.around(np.sqrt(len(varstats[varstats.Jstet > 0])), decimals=0).astype(int),
+# plt.hist(nonvars.Jstet.to_numpy() / nonvars.Lstet.to_numpy(),
+#          bins=np.around(np.sqrt(len(nonvars)), decimals=0).astype(int),
 #          histtype='step', color='k', linewidth=3, align='left')
 # plt.plot((np.around(comp_max + 2 * comp_std, decimals=2), np.around(comp_max + 2 * comp_std, decimals=2)),
 #          (0, 17000),
@@ -101,9 +75,9 @@ var_metric_cutoff = comp_max + 2 * comp_std
 # plt.xticks(fontsize=15)
 # plt.ylabel('Count', fontsize=20)
 # plt.xlim([0.74, 14.5])
-# plt.ylim([0, 17000])
+# plt.ylim([0, 7000])
 # plt.yticks(fontsize=15)
-# # plt.show()
+# plt.show()
 # plt.close()
 
 # get the periodicity cutoffs
@@ -142,18 +116,27 @@ for idx, row in varstats.iterrows():
     p4_pass = 0
     p5_pass = 0
 
-    if (row.rms > 5) & (row.gc_star == 0) & (row.var_type == '--'):
-        # determine basic variability testing
-        var_metric = row.Jstet / row.Lstet
+    # determine basic variability testing
+    var_metric = row.Jstet / row.Lstet
 
-        lc = pd.read_csv(Configuration.ONE_DRIVE + "lc/" + Configuration.FIELD + "/" + row['name'], sep=' ', header=0)
-        ok_data = sc(lc.mag, sigma=3)
-        ok_data.mask[np.argwhere(lc.mag == 0)] = True
-        ok_data.mask[np.argwhere(lc.mag > 25)] = True
+    lc = pd.read_csv(Configuration.ONE_DRIVE + "lc/" + Configuration.FIELD + "/" + row['name'], sep=' ', header=0)
+    ok_data = sc(lc.mag, sigma=3)
+    ok_data.mask[np.argwhere(lc.mag == 0)] = True
+    ok_data.mask[np.argwhere(lc.mag > 25)] = True
 
-        _, _, rms = scs(lc[~ok_data.mask].mag, sigma=2.5)
-        plt.scatter(lc[~ok_data.mask].jd, lc[~ok_data.mask].mag, c='k')
-        plt.title(str(rms))
+    lc = lc[~ok_data.mask].copy().reset_index(drop=True)
+    lc['days'] = lc.jd.to_numpy().astype('int')
+    dys = lc['days'].unique()
+    lc_agg = lc.groupby('days')['mag'].agg({'mean', 'count'}).reset_index()
+    mn, mdn, sg = scs(lc_agg['mean'], sigma=3)
+
+    chi2 = np.abs(lc_agg['mean'].to_numpy() - mn) / sg
+    cntdy = lc_agg['count'].to_numpy()
+    
+    if len(chi2[(chi2 > 3) & (cntdy > 5)] > 0):
+        plt.scatter(lc.jd, lc.mag, c='k', marker='.')
+        cut_lc = lc[lc['days'].isin(dys[chi2 > 3])]
+        plt.scatter(cut_lc.jd, cut_lc.mag, c='r')
         plt.gca().invert_yaxis()
         plt.show()
 
