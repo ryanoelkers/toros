@@ -15,7 +15,7 @@ from astropy.stats import sigma_clip as sc
 import numpy as np
 import statistics
 
-rematch = 'N'
+rematch = 'Y'
 
 if rematch == 'Y':
     # read in the star list
@@ -33,8 +33,7 @@ if rematch == 'Y':
                           (~np.isnan(star_list.phot_rp_mean_mag)) &
                           (star_list.var_id == '--') &
                           (star_list.gc_star == 0) &
-                          (star_list.phot_g_mean_mag < 19.5) &
-                          (star_list.master_mag_er < 0.25)].copy().reset_index(drop=True)
+                          (star_list.master_mag < 20)].copy().reset_index(drop=True)
 
     # convert everything to astropy coordinates
     star_list_ra = star_list.ra.to_numpy() * u.degree
@@ -50,7 +49,10 @@ if rematch == 'Y':
     # remove any rubin star without photometry in each bandpass
     rubin_list = rubin_list[(~np.isnan(rubin_list.g_psfMag)) &
                             (~np.isnan(rubin_list.r_psfMag)) &
-                            (~np.isnan(rubin_list.i_psfMag))].copy().reset_index(drop=True)
+                            (~np.isnan(rubin_list.i_psfMag)) &
+                            (rubin_list.g_psfMag < 20) &
+                            (rubin_list.r_psfMag < 20) &
+                            (rubin_list.i_psfMag < 20)].copy().reset_index(drop=True)
     rubin_list['toros_id'] = -1
 
     Utils.log("Starting the cross match between TOROS and LSST.", "info")
@@ -68,32 +70,32 @@ if rematch == 'Y':
         # let's make sure the stars within 5 arcseconds are reasonable colors based on empirical testing
         if len(sep[sep < 5]) > 0:
 
-            # find the stars with separations of 5 arcseconds
-            sep_idxs = np.argwhere(sep < 5)
-            kk = np.zeros(len(sep[sep < 5]))
+            # # find the stars with separations of 5 arcseconds
+            # sep_idxs = np.argwhere(sep < 5)
+            # kk = np.zeros(len(sep[sep < 5]))
+            #
+            # # loop through the stars and calculate the colors
+            # for idxs_idx, idxs in enumerate(sep_idxs):
+            #     gmr = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.r_psfMag
+            #     gmi = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.i_psfMag
+            #     gmg = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.g_psfMag
+            #
+            #     # if the star passes the empirical color check, then keep it
+            #     if (gmr < 0.2) & (gmr > -0.2) & (gmi < 0.75) & (gmi > 0.0) & (gmg < -0.25) & (gmg > -1.5):
+            #         kk[idxs_idx] = 1
+            #
+            # if len(np.argwhere(kk == 1).flatten()) == 1:
+            #     # if only one star passes the color check, then that is your guy
+            #     rubin_list.loc[idx,'toros_id'] = (
+            #         star_list.star_id[sep_idxs[np.argwhere(kk == 1).flatten()].flatten()].values)[0]
+            # elif len(np.argwhere(kk == 1).flatten()) > 1:
+            #     # if 1+ stars pass the color check, then pick the star closest to your position
+            #     min_seps = sep[sep < 5]
+            #     min_idxs = np.argmin(min_seps)
 
-            # loop through the stars and calculate the colors
-            for idxs_idx, idxs in enumerate(sep_idxs):
-                gmr = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.r_psfMag
-                gmi = star_list.loc[idxs, 'phot_g_mean_mag'].values[0]  - row.i_psfMag
-                gmg = star_list.loc[idxs, 'phot_g_mean_mag'].values[0]  - row.g_psfMag
-
-                # if the star passes the empirical color check, then keep it
-                if (gmr < 0.2) & (gmr > -0.2) & (gmi < 0.75) & (gmi > 0.0) & (gmg < -0.25) & (gmg > -1.5):
-                    kk[idxs_idx] = 1
-
-            if len(np.argwhere(kk == 1).flatten()) == 1:
-                # if only one star passes the color check, then that is your guy
-                rubin_list.loc[idx,'toros_id'] = (
-                    star_list.star_id[sep_idxs[np.argwhere(kk == 1).flatten()].flatten()].values)[0]
-            elif len(np.argwhere(kk == 1).flatten()) > 1:
-                # if 1+ stars pass the color check, then pick the star closest to your position
-                min_seps = sep[sep < 5]
-                min_idxs = np.argmin(min_seps)
-
-                rubin_list.loc[idx, 'toros_id'] = \
-                star_list.star_id[sep_idxs[np.argmin(min_seps)].flatten()].values[0]
-
+            #    rubin_list.loc[idx, 'toros_id'] = \
+            #    star_list.star_id[sep_idxs[np.argmin(min_seps)].flatten()].values[0]
+            rubin_list.loc[idx, 'toros_id'] = star_list.star_id[np.argmin(sep)]
     # merge the two data frames so we can have all the information for each star based on the star ID from TOROS
     cross_match = pd.merge(rubin_list, star_list, left_on='toros_id', right_on='star_id', how='inner')
 
@@ -115,15 +117,15 @@ else:
                               header=0,
                               index_col=0,
                               delimiter=',')
-    # calculate the colors for easier plotting and fitting
-    cross_match['ggmg'] = cross_match.phot_g_mean_mag - cross_match.g_psfMag  # Gaia - g
-    cross_match['ggmi'] = cross_match.phot_g_mean_mag - cross_match.i_psfMag  # Gaia - i
-    cross_match['ggmr'] = cross_match.phot_g_mean_mag - cross_match.r_psfMag  # Gaia - r
-    cross_match['bmr'] = cross_match.phot_bp_mean_mag - cross_match.phot_rp_mean_mag  # Bp - Rp
-    cross_match['tmgg'] = cross_match.master_mag - cross_match.phot_g_mean_mag  # TOROS - Gaia
-    cross_match['tmg'] = cross_match.master_mag - cross_match.g_psfMag  # TOROS - g
-    cross_match['tmi'] = cross_match.master_mag - cross_match.i_psfMag  # TOROS - i
-    cross_match['tmr'] = cross_match.master_mag - cross_match.r_psfMag  # TOROS - r
+# calculate the colors for easier plotting and fitting
+cross_match['ggmg'] = cross_match.phot_g_mean_mag - cross_match.g_psfMag  # Gaia - g
+cross_match['ggmi'] = cross_match.phot_g_mean_mag - cross_match.i_psfMag  # Gaia - i
+cross_match['ggmr'] = cross_match.phot_g_mean_mag - cross_match.r_psfMag  # Gaia - r
+cross_match['bmr'] = cross_match.phot_bp_mean_mag - cross_match.phot_rp_mean_mag  # Bp - Rp
+cross_match['tmgg'] = cross_match.master_mag - cross_match.phot_g_mean_mag  # TOROS - Gaia
+cross_match['tmg'] = cross_match.master_mag - cross_match.g_psfMag  # TOROS - g
+cross_match['tmi'] = cross_match.master_mag - cross_match.i_psfMag  # TOROS - i
+cross_match['tmr'] = cross_match.master_mag - cross_match.r_psfMag  # TOROS - r
 
 # remove obvious bad stars
 clipped_star_list = star_list[(~np.isnan(star_list.phot_g_mean_mag)) &
@@ -131,22 +133,12 @@ clipped_star_list = star_list[(~np.isnan(star_list.phot_g_mean_mag)) &
                               (~np.isnan(star_list.phot_rp_mean_mag)) &
                               (star_list.var_id == '--') &
                               (star_list.gc_star == 0) &
-                              (star_list.phot_g_mean_mag < 19) &
-                              (star_list.master_mag_er < 0.1)].copy().reset_index(drop=True)
-
-# remove obvious bad stars
-clipped_cross_match = cross_match[(~np.isnan(cross_match.phot_g_mean_mag)) &
-                              (~np.isnan(cross_match.phot_bp_mean_mag)) &
-                              (~np.isnan(cross_match.phot_rp_mean_mag)) &
-                              (cross_match.var_id == '--') &
-                              (cross_match.gc_star == 0) &
-                              (cross_match.phot_g_mean_mag < 19) &
-                              (cross_match.master_mag_er < 0.1)].copy().reset_index(drop=True)
+                              (star_list.master_mag < 20)].copy().reset_index(drop=True)
 
 # find the high sky values
 mn_sky, mdn_sky, std_sky = scs(clipped_star_list.master_sky, sigma=3)
 sky_cut = mn_sky + 3 * std_sky
-clipped_cross_match = clipped_cross_match[clipped_cross_match.master_sky < sky_cut].copy().reset_index(drop=True)
+clipped_cross_match = cross_match[cross_match.master_sky < sky_cut].copy().reset_index(drop=True)
 
 # clip based on crowding or high sky values
 clipped_cross_match['mn_dist'] = 0.
@@ -202,7 +194,7 @@ plt.xticks(fontsize=15)
 plt.xlim([4.6, 5.4])
 plt.ylabel('Count', fontsize=20)
 plt.yticks(fontsize=15)
-# plt.show()
+plt.show()
 plt.close()
 Utils.log("g = T - " + str(np.around(tmg_zpt, decimals=2)) + "+/-" + str(np.around(std_tmg, decimals=2)), "info")
 
