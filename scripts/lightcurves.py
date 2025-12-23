@@ -27,9 +27,9 @@ class Lightcurves:
 
         # get the image list to difference
         files, date_dirs = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
-                                                     Configuration.FIELD,
-                                                     'diff',
-                                                     Configuration.FILE_EXTENSION)
+                                                         Configuration.FIELD,
+                                                         'diff',
+                                                         Configuration.FILE_EXTENSION)
 
         # make the output directories for the flux files
         output_dirs = []
@@ -75,3 +75,18 @@ class Lightcurves:
         Photometry.combine_flux_files(star_list)
 
         return
+
+    @staticmethod
+    def clean_lightcurves():
+        """ THis function will clean the raw light curves for each star in the star list
+
+        :return nothing is returned, but the light curve is output
+        """
+
+        # pull in the star list photometry
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                delimiter=' ',
+                                header=0)
+
+        # combine the flux from the flux files, and write the raw light curves
+        Photometry.remove_systematics(star_list)

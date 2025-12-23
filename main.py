@@ -33,4 +33,9 @@ if Configuration.LIGHTCURVE_SKIP == 'N':
     Lightcurves.mk_raw_lightcurves()
 else:
     Utils.log("Skipping making raw light curves.", "info")
+
+if Configuration.SYSTEMATICS_SKIP == 'N':
+    Lightcurves.clean_lightcurves()
+else:
+    Utils.log("Skipping making raw light curves.", "info")
 Utils.log("All done! See ya later, alligator.", "info")

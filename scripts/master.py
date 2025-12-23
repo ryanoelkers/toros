@@ -2,16 +2,21 @@ from config import Configuration
 from libraries.utils import Utils
 from libraries.preprocessing import Preprocessing
 from libraries.photometry import Photometry
-import numpy as np
 import os
 from astropy.io import fits
 from photutils.centroids import centroid_sources
 import pandas as pd
 from astroquery.mast import Catalogs
 from astropy.wcs import WCS
-from astropy.stats import sigma_clipped_stats
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
-
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, AltAz
+import astropy.units as u
+from astropy.coordinates import EarthLocation
+import numpy as np
+from astropy.stats import sigma_clipped_stats
+from photutils.detection import DAOStarFinder
+import matplotlib.pyplot as plt
 
 class Master:
 
@@ -21,10 +26,6 @@ class Master:
 
         :return - The master frame is returned and the star list is printed
         """
-
-        ra_center, dec_center, reference_image = Preprocessing.find_alignment_position()
-
-        Preprocessing.align_images(ra_center, dec_center, reference_image)
 
         master, master_header = Master.mk_master()
 
@@ -40,7 +41,8 @@ class Master:
 
             if os.path.isfile(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_gaia_dump.txt') == 0:
                 # create the string useful for query_region
-                field = str(Configuration.RA) + " " + str(Configuration.DEC)
+                #field = str(Configuration.RA) + " " + str(Configuration.DEC)
+                field = str(master_header['CRVAL1']) + ' ' + str(master_header['CRVAL2'])
 
                 # select the columns we want to import into the data table
                 columns = ["toros_field_id", "source_id", "ra", "dec", "phot_g_mean_mag", "phot_bp_mean_mag",
@@ -86,8 +88,8 @@ class Master:
                 star_list = Photometry.add_variable_list(star_list, master_header)
 
             # remove the stars outside the frame
-            star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
-                                  (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
+            star_list = star_list[(star_list.x >= 500) & (star_list.x < 10540) &
+                                  (star_list.y > 20) & (star_list.y <= 9700)].copy().reset_index(drop=True)
 
             # centroid the star list
             star_list['xcen'], star_list['ycen'] = centroid_sources(master,
@@ -114,10 +116,8 @@ class Master:
             # centroid the positions
             positions = star_list[['xcen', 'ycen']].copy().reset_index(drop=True)  # positions = (x, y)
 
-            # run aperture photometry
             # set up the star aperture and sky annuli
-            aperture = CircularAperture(positions,
-                                        r=Configuration.APER_SIZE)
+            aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
 
             aperture_area = aperture.area  # the area of the aperture
             annulus_aperture = CircularAnnulus(positions,
@@ -126,19 +126,18 @@ class Master:
 
             # get the background stats
             aperstats = ApertureStats(master, annulus_aperture)
-            bkg_mean = aperstats.mean
-            total_bkg = bkg_mean * aperture_area
+            bkg_mean = aperstats.mean + master_header['MDN_SKY']
+            total_bkg = bkg_mean * aperture_area * Configuration.GAIN
 
             # run the photometry to get the data table
             phot_table = aperture_photometry(master, aperture, method='exact')
 
             # extract the flux from the table
-            # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
-            star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
+            star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN  # sky was already subtracted
 
             # calculate the expected photometric error
             star_error = star_flux
-            bkg_error = master_header['SKY'] * aperture_area * Configuration.GAIN
+            bkg_error = total_bkg
 
             # combine sky and signal error in quadrature
             star_flux_err = np.sqrt(star_error + bkg_error)
@@ -155,7 +154,7 @@ class Master:
             star_list['master_sky'] = total_bkg
 
             # only keep stars with reasonable photometry in the master list
-            star_list = star_list[star_list['master_flux'] > 0]
+            star_list = star_list[(star_list['master_flux'] > 0) | (star_list['object_type'] != 'Star')]
 
             # index is reset twice to make sure the star ID matches the brightness on the master frame
             star_list = star_list.sort_values(by='master_mag').reset_index(drop=True).reset_index()
@@ -190,35 +189,32 @@ class Master:
                                                                    Configuration.FIELD,
                                                                    'clean',
                                                                    Configuration.FILE_EXTENSION)
-            # determine the number of loops we need to move through for each image
-            full_nfiles = len(full_image_list)
+            # get the image statistics
+            image_stats = Master.get_image_stats(full_image_list)
 
-            # get the nights the images were observed
-            img_by_night = np.array([line.split('/')[7] for line in full_image_list]).reshape(-1)
+            # get statistics on the sky
+            _, img_mdn_sky, img_std_sky = sigma_clipped_stats(image_stats.sky.to_numpy(), sigma=2)
 
-            # loop through the image headers and get the sky background
-            sky_values = np.zeros(full_nfiles)
-            bd_wcs = np.zeros(full_nfiles)
-            for idx, file in enumerate(full_image_list):
+            # get the good files
+            pass_images = image_stats[(image_stats['nstars'] > Configuration.NSKY_STARS) &
+                                     (image_stats['sky'] < img_mdn_sky + 2 * img_std_sky) &
+                                     (image_stats['date'] != Configuration.BAD_DATES)].copy().reset_index(drop=True)
 
-                # pull in the header file
-                h_chk = fits.getheader(file)
+            # get the center coordinates for the master frame
+            pass_files = pass_images.file.to_list()
+            cen_ra = pass_images.ra.median()
+            cen_dec = pass_images.dec.median()
+            nfiles = len(pass_files)
 
-                # get the sky background
-                sky_values[idx] = h_chk['sky']
+            # find the closest file to the center
+            file_dist = np.sqrt((cen_ra - pass_images.ra) ** 2 + (cen_dec - pass_images.dec) ** 2)
+            master_file = pass_files[np.argmin(file_dist)]
 
-            # get the statistics on the images
-            img_mn, img_mdn, img_std = sigma_clipped_stats(sky_values, sigma=2)
+            Utils.log("Center found at ra: " + str(np.around(cen_ra, decimals=2)) + " dec: " +
+                      str(np.around(cen_dec, decimals=2)), "info")
 
-            # now make a list of the images to use for the master frame
-            image_list = []
-            for idx, file in enumerate(full_image_list):
-
-                # remove nights which have high sky background, bad wcs, or are on hand-picked bad nights
-                if (sky_values[idx] <= img_mdn + 2 * img_std) & (bd_wcs[idx] == 0) & (img_by_night[idx] != '2024-10-03'):
-                    image_list.append(file)
-
-            nfiles = len(image_list)
+            # pull in and set the master frame
+            master, master_header = fits.getdata(master_file, header=True)
 
             if len(chk_tmp_files) == 0:
                 Utils.log("No temporary Master files found. Generating new ones.", "info")
@@ -269,23 +265,16 @@ class Master:
                     for jj in range(loop_start, mx_index + loop_start):
                         # read in the image directly into the block_hold
 
-                        master_tmp, master_tmp_head = fits.getdata(image_list[jj], header=True)
+                        master_tmp, master_tmp_head = fits.getdata(pass_files[jj], header=True)
+                        master_tmp = master_tmp - master_tmp_head['sky']
 
-                        if (kk == 0) & (jj == 0):
-                             block_hold[idx_cnt] = master_tmp - master_tmp_head['sky']
-                             master_header = master_tmp_head
-                             del master_tmp
-                             Utils.log("Mini file " + str(kk) + " image " + str(jj) +
-                                       " aligned. " + str(nfiles - cnt_img) + " remain.",
-                                       "info")
-                        else:
-                             tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
-                             Utils.log("Mini file " + str(kk) + " image " + str(jj) +
-                                       " aligned. " + str(nfiles - cnt_img) + " remain.",
-                                       "info")
-                             block_hold[idx_cnt] = tmp - master_tmp_head['sky']
-                             del tmp
-                             del master_tmp
+                        tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
+                        Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                  " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                  "info")
+                        block_hold[idx_cnt] = tmp - master_tmp_head['sky']
+                        del tmp
+                        del master_tmp
 
                         cnt_img = cnt_img + 1
                         # increase the iteration
@@ -308,7 +297,8 @@ class Master:
                 hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_Y, Configuration.AXS_X))
 
                 for kk, tmp_file in enumerate(chk_tmp_files):
-                    master_tmp, master_tmp_head = fits.getdata(Configuration.MASTER_TMP_DIRECTORY + tmp_file, header=True)
+                    master_tmp, master_tmp_head = fits.getdata(Configuration.MASTER_TMP_DIRECTORY + tmp_file,
+                                                               header=True)
                     hold_data[kk] = master_tmp
                     master_header = master_tmp_head
 
@@ -317,12 +307,21 @@ class Master:
 
             master_header['MAST_COMB'] = 'median'
             master_header['NUM_MAST'] = nfiles
+            master_header['MDN_SKY'] = img_mdn_sky
+
+            _, master_sky, master_sig = sigma_clipped_stats(master, sigma=2.5)
 
             # now mask the bad parts of the image #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
-            master[0:490, :] = 0
-            master[10045:-1, :] = 0
-            master[:, 0:530] = 0
-            master[:, 10465:-1] = 0
+            master[:, 0:600] = np.random.normal(loc=master_sky,
+                                                scale=master_sig,
+                                                size=(10560,600))  # fill in the bad x
+            master[9699:-1, :] = np.random.normal(loc=master_sky,
+                                                  scale=master_sig,
+                                                  size=(860,10560))
+
+            if (master_sky < -1 * master_sig) | (master_sky > master_sky):
+                master = master - master_sky
+
             #### END LIKELY REMOVE
 
             # write the image out to the master directory
@@ -332,3 +331,75 @@ class Master:
             master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY + file_name, header=True)
 
         return master, master_header
+
+    @staticmethod
+    def get_image_stats(file_list):
+        """ This function will determine the best set of images based on statistics on each image (airmass, sky level,
+        star count, bad dates, etc.).
+
+        :parameter file_list - This is the list of images including their directory information
+
+        :return image_stats - A dataframe with the image statistics is returned and written to file
+        """
+
+        if os.path.exists(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_image_stats.txt') == 0:
+            Utils.log("No legacy image statistics file found, generating a new one.", "info")
+
+            # loop through the file list getting statistics on each image
+            image_stats_list = []
+
+            location = EarthLocation(lat=Configuration.TOROS_LATITUDE * u.deg,
+                                     lon=Configuration.TOROS_LONGITUDE * u.deg,
+                                     height=Configuration.TOROS_ELEVATION * u.m)
+
+
+            for idx, file in enumerate(file_list):
+                if idx % 10 == 0:
+                    Utils.log("Working on statistics for the next 10 files. " +
+                              str(len(file_list) - idx) + ' files remain.', 'info')
+
+                # get the image
+                img, header = fits.getdata(file, header=True)
+
+                # get the start date of the observation
+                date = file.split('/')[-3]
+
+                # get the time of the image
+                time_iso = header['Date'].split('T')[0] + ' ' +header['Date'].split('T')[1]
+                jd = Time(time_iso, format='iso', scale='utc').jd
+
+                # get the WCS of the position of the center pixel (10560x10560) > 5280/5280
+                wcs = WCS(header)
+                ra_cen, dec_cen = wcs.all_pix2world(Configuration.AXS_X / 2, Configuration.AXS_Y / 2, 1)
+
+                # get the airmass
+                target = SkyCoord(ra=ra_cen * u.deg, dec=dec_cen * u.deg, frame='icrs')
+                altaz_frame = AltAz(obstime=time_iso, location=location)
+                target_altaz = target.transform_to(altaz_frame)
+                airmass = target_altaz.secz
+
+                # get the number of stars in the image and the image background
+                sky = header['sky']
+                sky_sig = header['sky_sig']
+                daofind = DAOStarFinder(fwhm=9.0, threshold=5. * sky_sig)
+                sources = daofind(img - sky)
+                nstars = len(sources[sources['flux'] > 0])
+
+                image_list_row = {'file': file, 'date': date, 'jd': jd, 'ra': ra_cen, 'dec': dec_cen,
+                                  'sky': sky, 'airmass': airmass, 'nstars': nstars}
+
+                image_stats_list.append(image_list_row)
+
+            # convert to data frame
+            image_stats = pd.DataFrame(image_stats_list)
+
+            # write to file
+            image_stats.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_image_stats.txt', sep=' ')
+        else:
+            # warn about legacy file
+            Utils.log("Legacy image statistics file being used. Delete it if you don't want it!", "info")
+
+            image_stats = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_image_stats.txt',
+                                      sep=' ', index_col=0)
+
+        return image_stats

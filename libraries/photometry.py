@@ -2,7 +2,6 @@
 from config import Configuration
 from libraries.utils import Utils
 from astropy.io import fits
-from astropy.stats import sigma_clipped_stats
 from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 import numpy as np
 import pandas as pd
@@ -18,9 +17,160 @@ pil_logger = logging.getLogger('PIL')
 pil_logger.setLevel(logging.INFO)
 import matplotlib.pyplot as plt
 from astropy.wcs import WCS
-
+import astropy.units as u
+from astropy.stats import sigma_clipped_stats as scs
 
 class Photometry:
+
+    @staticmethod
+    def remove_systematics(star_list, trend_stars=500):
+        """ This function will use a combination of image statistics and ensemble light curves to remove common
+        systematics from each light curve.
+
+        :parameter star_list - The data frame with the original star list
+        :parameter trend_stars - The number of stars you want to use for the detrending search, default 500
+
+        :return nothing is returned, but the files are written with a new magnitude column
+        """
+        # add if the star is in 47-Tuc (this is less restrictive now since, many of those stars can probably be cleaned)
+        star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
+                                        (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
+        # open the error file for writing
+        f = open(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt", "w")
+        header = 'name mag rms erms orms x y chip object_type\n'
+        f.write(header)
+
+        for idx, row in star_list.iterrows():
+            if idx % 1000 == 0:
+                Utils.log("Working to detrend the next 100 light curves. " +
+                          str(len(star_list) - idx - 1) + " light curves remain.", "info")
+
+            # read in the light curve
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
+                             Configuration.FIELD + "_" + str(row.source_id) + ".lc", sep=' ')
+
+            # determine the offset in magnitude and distance from the target star
+            star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
+            star_list['dist'] = np.sqrt((star_list.y - row.y) ** 2 + (star_list.x - row.x) ** 2)
+
+            # grab the list of trends stars based on whether or not the star is in 47-Tuc
+            if row.gc_star == 0:
+                trend_list = star_list[(star_list.gc_star == 0) &
+                                       (star_list.dist > Configuration.APER_SIZE) &
+                                       (star_list.object_type == 'Star')].copy().sort_values(by='dmag')[0:trend_stars].reset_index(drop=True)
+            else:
+                trend_list = star_list[(star_list.gc_star == 1) &
+                                       (star_list.dist > Configuration.APER_SIZE) &
+                                       (star_list.object_type == 'Star')].copy().sort_values(by='dmag')[0:trend_stars].reset_index(drop=True)
+
+            # set up the empty collection vectors
+            cols = {}
+            col_nme = []
+            mgs = np.zeros(len(trend_list))
+
+            kk = 0  # initialize the star names
+            for idy, rw in trend_list.iterrows():
+                # read in the trend light curves
+                tr = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY  +
+                                 Configuration.FIELD + "_" + str(rw.source_id) + ".lc", sep=' ')
+                # only accept the star for detrending if it has non-zero values
+                if len(tr[tr.mag > 0]) > 0:
+                    # subtract the median value from the light curve
+                    cols['mag_' + str(kk)] = tr.mag.to_numpy() - tr[tr.mag > 0].mag.median()
+                    # grab the value you subtracted for safe keeping
+                    mgs[idy] = tr[tr.mag > 0].mag.median()
+                    # append the column name list to make the data frame
+                    col_nme.append('mag_' + str(kk))
+                    # update kk
+                    kk = kk + 1
+                del tr
+            del trend_list
+
+            # make the trend_df
+            trend_df = pd.DataFrame(cols, columns=col_nme)
+
+            # set up the trend vector
+            lc['trd'] = np.zeros(len(lc))
+
+            # loop through each day finding the appropriate offset
+            for ii in range(len(lc)):
+                # get the offset for the specific day
+                offsets = trend_df.loc[ii].to_numpy()
+
+                # initialize the holding lists
+                mg = []
+                off = []
+
+                # get the offset list in X.X mag chunks to interpolate around outliers
+                for jj in np.arange(np.min(mgs), np.max(mgs), 0.1):
+                    # ignore any empty space
+                    if len(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)]) > 0:
+                        # get the current magnitude bin
+                        mg.append(jj + 0.05)
+                        # get the median offset with 2.5 sigma clipping
+                        _, mg_mdn, _ = scs(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)], sigma=2.5)
+                        # the value shouldn't be nan, but if it is, then just use the median of the whole day
+                        if np.isnan(mg_mdn):
+                            off.append(np.median(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)]))
+                        else:
+                            off.append(mg_mdn)
+                # get the trend value for this observations
+                trd = np.interp(lc.mag[ii], mg, off)
+
+                # if it is nan, then just use the median for the full day
+                if np.isnan(trd):
+                    lc.loc[ii, 'trd'] = np.nanmedian(off)
+                else:
+                    lc.loc[ii, 'trd'] = trd
+            del trend_df
+
+            # clean up the light curve a bit
+            lc = lc.rename(columns={'mag': 'raw'})
+            lc['mag'] = lc['raw'] - lc['trd']
+
+            # rearrange the light curve information for better outputs
+            lc = lc[['jd', 'mag', 'err', 'raw', 'trd', 'sky', 'bkg', 'x', 'y', 'nstars', 'airmass']]
+
+            # update bad data
+            lc.raw = np.where(lc.raw < 0, -9.9999, lc.raw)
+            lc.mag = np.where(lc.raw < 0, -9.9999, lc.mag)
+
+            # calculate statistics for the error analysis
+            _, _, new_std = scs(lc.mag[lc.mag > 0], sigma=2.5)
+            _, _, old_std = scs(lc.raw[lc.raw > 0], sigma=2.5)
+            exp_std, _, _ = scs(lc.err[lc.raw > 0], sigma=2.5)
+
+            # update print formats
+            lc.mag = lc.mag.map(lambda x: '%0.4f' % x)
+            lc.raw = lc.raw.map(lambda x: '%0.4f' % x)
+            lc.err = lc.err.map(lambda x: '%0.4f' % x)
+            lc.trd = lc.trd.map(lambda x: '%0.4f' % x)
+            lc.x = lc.x.map(lambda x: '%d' % x)
+            lc.y = lc.y.map(lambda x: '%d' % x)
+            lc.nstars = lc.nstars.map(lambda x: '%d' % x)
+
+            # output the statistics
+            line = (Configuration.FIELD + "_" + str(row.source_id) + ".lc" + " " +
+                    str(np.around(row.master_mag, decimals=4)) + " " +
+                    str(np.around(new_std, decimals=4)) + " " +
+                    str(np.around(exp_std, decimals=4)) + " " +
+                    str(np.around(old_std, decimals=4)) + " " +
+                    str(np.around(row.xcen, decimals=2)) + " " +
+                    str(np.around(row.ycen, decimals=2)) + " " +
+                    str(int(row.chip)) + " " +
+                    str(row.object_type) + "\n")
+            f.write(line)
+
+            # write out the light curve
+            lc.to_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + "/" +
+                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                      sep=" ", header=True, index=False)
+            del lc
+
+        # now close the file
+        f.close()
+
+        return
 
     @staticmethod
     def add_variable_list(star_list, master_header):
@@ -117,6 +267,12 @@ class Photometry:
         # get the image for photometry
         img, header = fits.getdata(img_name, header=True)
 
+        # get the cleaned image for the x/y position
+        cln_nme = img_name.split('diff')[0] + 'clean' + img_name.split('diff')[1].split('ad.fits')[0] + '.fits'
+        cln_header = fits.getheader(cln_nme)
+        w_cln = WCS(cln_header)
+        x_cln, y_cln = w_cln.all_world2pix(star_list.ra * u.deg, star_list.dec * u.deg, 0)
+
         # get the various important header information
         time = Time(header['DATE'], format='isot', scale='utc')
         jd = time.jd
@@ -134,18 +290,18 @@ class Photometry:
         # get the background stats
         aperstats = ApertureStats(img, annulus_aperture)
         bkg_mean = aperstats.mean
-        bkg_total = bkg_mean * aperture.area
+        bkg_total = np.abs(header['sky'] + bkg_mean) * aperture_area
 
         # run the photometry to get the data table
         phot_table = aperture_photometry(img, aperture, method='exact')
 
         # extract the flux from the table
         # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
-        star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
+        star_flux = np.array(phot_table['aperture_sum'] - bkg_mean * aperture_area) * Configuration.GAIN
 
         # calculate the expected photometric error
         star_error = np.abs(star_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float))
-        bkg_error = np.abs(header['sky'] + bkg_mean) * aperture_area * Configuration.GAIN
+        bkg_error = bkg_total * Configuration.GAIN
 
         # combine sky and signal error in quadrature
         star_flux_err = np.sqrt(star_error + bkg_error)
@@ -156,43 +312,12 @@ class Photometry:
 
         # convert to magnitude
         mag = 25. - 2.5 * np.log10(flux)
-        mag_nbkg = 25. - 2.5 * np.log10(flux - bkg_total)
         mag_er = (np.log(10.) / 2.5) * (flux_er / flux)
-
-        # initialize the master magnitude of all frames
-        m_mag = star_list['master_mag'].to_numpy()
-
-        # the magnitude difference between the science frame magnitude and the master frame
-        dmag = mag[~np.isnan(mag)] - m_mag[~np.isnan(mag)]
-
-        # initialize the offset vector
-        off = np.zeros(len(mag))
-
-        # set up holders for interpolation
-        f_mags = np.arange(6, 16) + 0.5
-        n_mags = np.zeros(len(f_mags))
-
-        # loop through each chip to find the zero point offset
-        for chp in range(1, 17):
-            for mag_idx, m_lw in enumerate(f_mags):
-                # get the zeropoint using non-nan stars in the chip between the magnitude range
-                dmag_bin = dmag[(mag[~np.isnan(mag)] > m_lw) &
-                                (mag[~np.isnan(mag)] < m_lw + 1) &
-                                (star_list[~np.isnan(mag)].chip.to_numpy() == chp) &
-                                (star_list[~np.isnan(mag)].object_type.to_numpy() == 'Star')]
-
-                # sigma clip outliers
-                dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(np.array(dmag_bin, dtype=float), sigma=2)
-                n_mags[mag_idx] = dmag_md
-
-            # interpolate to all magnitudes
-            off[star_list.chip.to_numpy() == chp] = np.interp(mag[star_list.chip.to_numpy() == chp], f_mags, n_mags)
 
         # now correct the magnitudes for exposure time
         mag = mag + 2.5 * np.log10(Configuration.EXP_TIME)
 
         # replace nans with -9.999999
-        off = np.where(np.isnan(off), -9.999999, off)
         mag = np.where(np.isnan(mag), -9.999999, mag)
 
         # generate the final flux file
@@ -200,14 +325,12 @@ class Photometry:
         flux_file['flux'] = flux
         flux_file['flux_er'] = flux_er
         flux_file['mag'] = mag
-        flux_file['mag_nbkg'] = mag_nbkg
         flux_file['mag_er'] = mag_er
-        flux_file['sky'] = header['SKY']
-        flux_file['bkg'] = bkg_mean
+        flux_file['bkg'] = bkg_error
         flux_file['jd'] = jd
-        flux_file['zpt'] = off
         flux_file['exp_time'] = Configuration.EXP_TIME
-
+        flux_file['x'] = x_cln
+        flux_file['y'] = y_cln
         flux_file.to_csv(fin_name, header=True, index=False)
         return
 
@@ -229,15 +352,20 @@ class Photometry:
         nstars = len(star_list)  # The number of stars to generate light curves for
         Utils.log(str(nfiles) + " flux files found for " + Configuration.FIELD + ".", "info")
 
+        # get the image statisitics
+        img_stats = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_image_stats.txt',
+                                sep=' ', index_col=0)
+
         # make the holders for the light curves
         jd = np.zeros(nfiles)
         mag = np.zeros((nstars, nfiles))
         err = np.zeros((nstars, nfiles))
-        err_scl = np.zeros((nstars, nfiles))
-        trd = np.zeros((nstars, nfiles)) - 9.999999
-        zpt = np.zeros((nstars, nfiles))
-        sky = np.zeros((nstars, nfiles))
+        sky = np.zeros(nfiles)
         bkg = np.zeros((nstars, nfiles))
+        x = np.zeros((nstars, nfiles))
+        y = np.zeros((nstars, nfiles))
+        airmass = np.zeros(nfiles)
+        nstrs = np.zeros(nfiles)
 
         for idy, file in enumerate(files):
 
@@ -252,89 +380,45 @@ class Photometry:
             jd[idy] = img_flux.loc[0, 'jd']
             mag[:, idy] = img_flux['mag'].to_numpy()
             err[:, idy] = img_flux['mag_er'].to_numpy()
-            err_scl[:, idy] = img_flux['mag_er'].to_numpy()
-            zpt[:, idy] = img_flux['zpt'].to_numpy()
-            sky[:, idy] = img_flux['sky'].to_numpy()
+            sky[idy] = img_stats.loc[idy, 'sky']
             bkg[:, idy] = img_flux['bkg'].to_numpy()
+            x[:, idy] = img_flux['x'].to_numpy()
+            y[:, idy] = img_flux['y'].to_numpy()
+            airmass[idy] = img_stats.loc[idy, 'airmass']
+            nstrs[idy] = img_stats.loc[idy, 'nstars']
 
             if (idy % 100 == 0) & (idy > 0):
                 Utils.log("100 flux files read. " + str(nfiles - idy - 1) + ' files remain.', "info")
 
-        ## IF THERE IS AN OBJECT IN THE FIELD (LIKE 47-TUC) then block it
-        star_list['bd_stars'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
-                                         (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
-
-        # convert the master frame magnitude to e/s
-        star_list['master_mag'] = star_list['master_mag'] + 2.5 * np.log10(Configuration.EXP_TIME)
+        # get the source id list
         src_id = star_list.source_id.to_numpy()
 
-        for idy, row in star_list.iterrows():
-
-            # get the distance to all stars
-            dd = np.sqrt((row.xcen - star_list.xcen.to_numpy()) ** 2 +
-                         (row.ycen - star_list.ycen.to_numpy()) ** 2)
-
-            # get the difference in magnitude
-            dmag = np.abs(row.master_mag - star_list.master_mag.to_numpy())
-
-            # only get nearby stars of similar magnitude, on the same chip, aren't variables, and aren't in a bad area
-            vv = np.argwhere((dmag < 2) & (dd > 0) & (star_list['chip'] == row.chip) &
-                             (star_list['bd_stars'] == 0) & (star_list['object_type'] == 'star')).reshape(-1)
-            vv_all = np.argwhere((dmag < 0.5) & (dd > 0) &
-                                 (star_list['bd_stars'] == 0) & (star_list['object_type'] == 'star')).reshape(-1)
-
-            if len(vv) > 0:
-                # generate the trend for the trend stars
-                for idz in range(len(jd)):
-                    _, trd[idy, idz], _ = sigma_clipped_stats(mag[vv, idz] -
-                                                              star_list.loc[vv].master_mag.to_numpy(), sigma=3)
-
-            else:
-                # if no stars exist, then go ahead and use all stars in the frame, not just your chip
-                for idz in range(len(jd)):
-                    _, trd[idy, idz], _ = sigma_clipped_stats(mag[vv_all, idz] -
-                                                              star_list.loc[vv_all].master_mag.to_numpy(), sigma=3)
-
-            # get the updates error based on similar stars
-            _, _, ss = sigma_clipped_stats(mag[vv_all] - trd[idy], sigma=3, axis=1)
-            m_er, _, _ = sigma_clipped_stats(err[idy], sigma=3)
-            if len(ss) > 0:
-                sigma_scale = m_er / np.quantile(ss, 0.01)
-            else:
-                sigma_scale = 1.
-
-            # rescale the errors
-            err_scl[idy] = err[idy] / sigma_scale
-
-            if (idy % 1000 == 0) & (idy > 0):
-                Utils.log("1000 stars had their trend found. " +
-                          str(nstars - idy - 1) + " stars remain.", "info")
-
         # write out the light curve data
-        Photometry.write_light_curves(nstars, jd, mag, err, err_scl, trd, zpt, sky, bkg, src_id)
+        Photometry.write_raw_light_curves(nstars, jd, mag, err, sky, bkg, x, y, airmass, nstrs, src_id)
 
         return
 
     @staticmethod
-    def write_light_curves(nstars, jd, mag, er, er_scl, trd, zpt, sky, bkg, src_id):
+    def write_raw_light_curves(nstars, jd, mag, er, sky, bkg, x, y, airmass, nstars_img, src_id):
         """ This function will write the flux columns to light curves for each src_id
 
         :parameters - nstars - the number of stars to have light curves written
         :parameters - jd - the numpy array of julian dates (one per file)
         :parameters - mag - the magnitudes for each star at each jd
         :parameters - er - the photometric error for each star at each time
-        :parameters - er_scl - the photometric error for each star with scaling
-        :parameters - trd - the trend from nearby similar magnitude stars
-        :parameters - zpt - the zeropiont using all stars in the frame
         :parameters - sky - the median sky background
         :parameters - bkg - the local background for the source
+        :parameters - x - the x position of the star on the detector
+        :parameters - y - the y position of the star on the detector
+        :parameters - airmass - the airmass of the image
+        :parameters - nstars_img - the number of stars on the image
         :parameters - src_id - nstars long array of source ids
 
         :return - nothing is returned, but the light curve files are written
         """
 
         # initialize the light curve data frame
-        lc = pd.DataFrame(columns=['jd', 'mag', 'err', 'trd', 'zpt', 'sky', 'bkg'])
+        lc = pd.DataFrame(columns=['jd', 'mag', 'err', 'bkg', 'x', 'y', 'sky', 'airmass', 'nstars'])
 
         Utils.log("Starting light curve writing for " + str(nstars) + " stars.", "info")
 
@@ -344,28 +428,28 @@ class Photometry:
             # add the time, magnitude and error to the data frame
             lc['jd'] = np.around(jd, decimals=6)
             lc['mag'] = np.around(mag[idx, :], decimals=6)
-            lc['err'] = np.around(er_scl[idx, :], decimals=6)
-            lc['trd'] = np.around(trd[idx, :], decimals=6)
-            lc['org_err'] = np.around(er[idx, :], decimals=6)
-            lc['zpt'] = np.around(zpt[idx, :], decimals=6)
-            lc['sky'] = np.around(sky[idx, :], decimals=0)
-            lc['bkg'] = np.around(bkg[idx, :], decimals=0)
+            lc['err'] = np.around(er[idx, :], decimals=6)
+            lc['sky'] = np.around(sky, decimals=2)
+            lc['bkg'] = np.around(bkg[idx, :], decimals=2)
+            lc['x'] = np.around(x[idx, :], decimals=0)
+            lc['y'] = np.around(y[idx, :], decimals=0)
+            lc['airmass'] = np.around(airmass, decimals=3)
+            lc['nstars'] = np.around(nstars_img, decimals=0)
 
             # make sure the data is in order!
             lc = lc.sort_values(by = 'jd').reset_index(drop=True)
             lc['err'] = np.where(lc['mag'] < 0, -9.999999, lc['err'])
-            lc['org_err'] = np.where(lc['mag'] < 0, -9.999999, lc['org_err'])
-            lc['trd'] = np.where(lc['mag'] < 0, -9.999999, lc['trd'])
-            lc['zpt'] = np.where(lc['mag'] < 0, -9.999999, lc['zpt'])
-            lc['sky'] = np.where(lc['mag'] < 0, -9.999999, lc['sky'])
+            # lc['sky'] = np.where(lc['mag'] < 0, -9.999999, lc['sky'])
             lc['bkg'] = np.where(lc['mag'] < 0, -9.999999, lc['bkg'])
             lc['mag'] = np.where(lc['mag'] < 0, -9.999999, lc['mag'])
+            lc['x'] = np.where(lc['mag'] < 0, -9.999999, lc['x'])
+            lc['y'] = np.where(lc['mag'] < 0, -9.999999, lc['y'])
 
             # write the new file
-            lc[['jd', 'mag', 'err', 'trd', 'org_err', 'zpt', 'sky', 'bkg']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
-                                                                                   Configuration.FIELD + "/" +
-                                                                                   Configuration.FIELD +"_" + star_id + ".lc",
-                                                                                   sep=" ", index=False, na_rep='-9.999999')
+            lc[['jd', 'mag', 'err', 'bkg', 'x',
+                'y', 'sky', 'airmass', 'nstars']].to_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
+                                                         Configuration.FIELD +"_" + star_id + ".lc",
+                                                         sep=" ", index=False, na_rep='-9.999999')
 
             if (idx > 0) & (idx / 10000 % 1 == 0):
                 Utils.log("10000 stars have had their light curves written. " +

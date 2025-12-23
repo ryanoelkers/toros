@@ -124,10 +124,12 @@ class Utils:
 
         # get the unique dates with images
         for file in files_no_ext:
-            dte_dir.append(file.split('/')[-2])
+            dte_idx = file.split('/').index(field)
+            dte_dir.append(file.split('/')[dte_idx - 1])
         uni_dte_dir = np.unique(dte_dir).tolist()
 
-        return  files_no_ext, uni_dte_dir
+        file_srt = np.argsort(files_no_ext)
+        return  np.array(files_no_ext)[file_srt], uni_dte_dir
 
     @staticmethod
     def get_all_files_per_date(path, file_ext):

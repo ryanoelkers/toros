@@ -8,6 +8,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from photutils.aperture import CircularAperture
 from photutils.aperture import aperture_photometry
+from photutils.detection import DAOStarFinder
 from astropy.stats import sigma_clipped_stats
 from photutils.centroids import centroid_sources
 import astroalign as aa
@@ -43,23 +44,21 @@ class BigDiff:
                                                      'clean',
                                                      Configuration.FILE_EXTENSION)
 
-        # get the file list for all dates the FIELD was observed
-        Utils.log("Getting file list to make directories", "info")
-        files, date_dirs = Utils.get_all_files_per_field(Configuration.RAW_DIRECTORY,
-                                                         Configuration.FIELD,
-                                                         'raw',
-                                                         Configuration.FILE_EXTENSION)
-        files = np.sort(files)
-        nfiles = len(files)
-
         # make the output directories for the difference files
         output_dirs = []
 
-        for dte in date_dirs:
+        for dte in dates:
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
 
         Utils.create_directories(output_dirs)
+
+        # clip bad images
+        image_stats = pd.read_csv(Configuration.MASTER_DIRECTORY + 'FIELD_0e.001_image_stats.txt', sep=' ')
+        pass_images = image_stats[(image_stats['nstars'] > Configuration.NSKY_STARS) &
+                                  (image_stats['date'] != Configuration.BAD_DATES)].copy().reset_index(drop=True)
+        files = pass_images.file.to_list()
+        nfiles = len(pass_images)
 
         # read in the master frame information
         master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY +
@@ -124,11 +123,10 @@ class BigDiff:
         diff_list['x'] = x
         diff_list['y'] = y
 
+        # remove stars from 47-Tuc and the edge of the frame
         diff_list['bd_star'] = np.where((diff_list['x'] > 4300) & (diff_list['x'] < 9300) &
                                          (diff_list['y'] > 3600) & (diff_list['y'] < 8200), 1, 0)
-        diff_list['bd_star'] = np.where((diff_list['x'] > 1200) & (diff_list['x'] < 1900) &
-                                          (diff_list['y'] > 5100) & (diff_list['y'] < 5600), 2,
-                                         diff_list['bd_star'])
+
         diff_list['bd_star'] = np.where((diff_list['y'] < 1000) | (diff_list['y'] > 9000), 3
                                          , diff_list['bd_star'])
         diff_list['bd_star'] = np.where((diff_list['x'] < 1000) | (diff_list['x'] > 9000), 3
@@ -167,11 +165,6 @@ class BigDiff:
         tform = aa.estimate_transform('affine', src, dst)
 
         img_align, footprint = aa.apply_transform(tform, img_sbkg, master)
-
-        # img_align = Preprocessing.align_img(img_sbkg, org_header, master_header)
-        # img_align, footprint = reproject_interp((img_sbkg, org_header), master_header,
-        #                                         shape_out=img_sbkg.shape)
-        #img_align[np.isnan(img_align)] = 0
 
         org_header['WCSAXES'] = master_header['WCSAXES']
         org_header['CRPIX1'] = master_header['CRPIX1']
@@ -232,12 +225,8 @@ class BigDiff:
         header['nstars'] = nstars  # update the header to show the number of kernel stars
         dimg = dimg.astype(np.float32)  # update the image to be FLOAT32, we don't need FLOAT64
 
-        # now mask the missing master frame parts #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
-        dimg[0:490, :] = 0
-        dimg[10045:-1, :] = 0
-        dimg[:, 0:530] = 0
-        dimg[:, 10465:-1] = 0
-        #### END LIKELY REMOVE
+        dimg[:, 0:600] = 0
+        dimg[9699:-1, :] = 0
 
         # update the image with the new file header
         fits.writeto('dimg.fits', dimg, header, overwrite=True)
@@ -297,9 +286,9 @@ class BigDiff:
                                         (diff_list['ycen'] > 5100) & (diff_list['ycen'] < 5600),
                                         2, diff_list['bd_star'])
         diff_list['bd_star'] = np.where((diff_list['ycen'] < 1000) | (diff_list['ycen'] > 9000),
-                                        3, diff_list['bd_star'])
+                                         3, diff_list['bd_star'])
         diff_list['bd_star'] = np.where((diff_list['xcen'] < 1000) | (diff_list['xcen'] > 9000),
-                                        3, diff_list['bd_star'])
+                                         3, diff_list['bd_star'])
         diff_list = diff_list[diff_list.bd_star == 0].copy().reset_index(drop=True)
 
         ## END REMOVAL FOR NON-47TUC FIELDS!!!!
@@ -326,7 +315,7 @@ class BigDiff:
         dmag_plus = dmd + dsg
         dmag_minus = dmd - dsg
         diff_list = diff_list[(diff_list['dmag'] < dmag_plus) &
-                                   (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
+                              (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
 
         # make a magnitude cut
         diff_list = diff_list[(diff_list.phot_g_mean_mag < 17) &

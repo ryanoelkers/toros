@@ -15,7 +15,7 @@ from astropy.stats import sigma_clip as sc
 import numpy as np
 import statistics
 
-rematch = 'Y'
+rematch = 'N'
 
 if rematch == 'Y':
     # read in the star list
@@ -32,8 +32,7 @@ if rematch == 'Y':
                           (~np.isnan(star_list.phot_bp_mean_mag)) &
                           (~np.isnan(star_list.phot_rp_mean_mag)) &
                           (star_list.var_id == '--') &
-                          (star_list.gc_star == 0) &
-                          (star_list.master_mag < 20)].copy().reset_index(drop=True)
+                          (star_list.gc_star == 0)].copy().reset_index(drop=True)
 
     # convert everything to astropy coordinates
     star_list_ra = star_list.ra.to_numpy() * u.degree
@@ -71,31 +70,31 @@ if rematch == 'Y':
         if len(sep[sep < 5]) > 0:
 
             # # find the stars with separations of 5 arcseconds
-            # sep_idxs = np.argwhere(sep < 5)
-            # kk = np.zeros(len(sep[sep < 5]))
+            sep_idxs = np.argwhere(sep < 5)
+            kk = np.zeros(len(sep[sep < 5]))
             #
             # # loop through the stars and calculate the colors
-            # for idxs_idx, idxs in enumerate(sep_idxs):
-            #     gmr = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.r_psfMag
-            #     gmi = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.i_psfMag
-            #     gmg = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.g_psfMag
+            for idxs_idx, idxs in enumerate(sep_idxs):
+                gmr = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.r_psfMag
+                gmi = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.i_psfMag
+                gmg = star_list.loc[idxs, 'phot_g_mean_mag'].values[0] - row.g_psfMag
             #
-            #     # if the star passes the empirical color check, then keep it
-            #     if (gmr < 0.2) & (gmr > -0.2) & (gmi < 0.75) & (gmi > 0.0) & (gmg < -0.25) & (gmg > -1.5):
-            #         kk[idxs_idx] = 1
+                 # if the star passes the empirical color check, then keep it
+                if (gmr < 0.2) & (gmr > -0.2) & (gmi < 0.75) & (gmi > 0.0) & (gmg < -0.25) & (gmg > -1.5):
+                     kk[idxs_idx] = 1
             #
-            # if len(np.argwhere(kk == 1).flatten()) == 1:
+            if len(np.argwhere(kk == 1).flatten()) == 1:
             #     # if only one star passes the color check, then that is your guy
-            #     rubin_list.loc[idx,'toros_id'] = (
-            #         star_list.star_id[sep_idxs[np.argwhere(kk == 1).flatten()].flatten()].values)[0]
-            # elif len(np.argwhere(kk == 1).flatten()) > 1:
-            #     # if 1+ stars pass the color check, then pick the star closest to your position
-            #     min_seps = sep[sep < 5]
-            #     min_idxs = np.argmin(min_seps)
+                 rubin_list.loc[idx,'toros_id'] = (
+                     star_list.star_id[sep_idxs[np.argwhere(kk == 1).flatten()].flatten()].values)[0]
+            elif len(np.argwhere(kk == 1).flatten()) > 1:
+                # if 1+ stars pass the color check, then pick the star closest to your position
+                min_seps = sep[sep < 5]
+                min_idxs = np.argmin(min_seps)
 
-            #    rubin_list.loc[idx, 'toros_id'] = \
-            #    star_list.star_id[sep_idxs[np.argmin(min_seps)].flatten()].values[0]
-            rubin_list.loc[idx, 'toros_id'] = star_list.star_id[np.argmin(sep)]
+                rubin_list.loc[idx, 'toros_id'] = \
+                star_list.star_id[sep_idxs[np.argmin(min_seps)].flatten()].values[0]
+            # rubin_list.loc[idx, 'toros_id'] = star_list.star_id[np.argmin(sep)]
     # merge the two data frames so we can have all the information for each star based on the star ID from TOROS
     cross_match = pd.merge(rubin_list, star_list, left_on='toros_id', right_on='star_id', how='inner')
 
@@ -132,8 +131,7 @@ clipped_star_list = star_list[(~np.isnan(star_list.phot_g_mean_mag)) &
                               (~np.isnan(star_list.phot_bp_mean_mag)) &
                               (~np.isnan(star_list.phot_rp_mean_mag)) &
                               (star_list.var_id == '--') &
-                              (star_list.gc_star == 0) &
-                              (star_list.master_mag < 20)].copy().reset_index(drop=True)
+                              (star_list.gc_star == 0)].copy().reset_index(drop=True)
 
 # find the high sky values
 mn_sky, mdn_sky, std_sky = scs(clipped_star_list.master_sky, sigma=3)
@@ -163,9 +161,9 @@ plt.figure(figsize=(9, 6))
 plt.hist(clipped_cross_match.tmgg, bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int),
          histtype='step', color='k', linewidth=3, align='left')
 plt.arrow(np.around(tmgg_zpt, decimals=2), np.max(cnts) + 10, 0, 25, color='r')
-plt.text(np.around(tmgg_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_G$=' +
-         str(np.around(tmgg_zpt, decimals=2)) + r'$\pm$' +
-         str(np.around(std_tmgg, decimals=2)), fontsize=20)
+#plt.text(np.around(tmgg_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_G$=' +
+#         str(np.around(tmgg_zpt, decimals=2)) + r'$\pm$' +
+#         str(np.around(std_tmgg, decimals=2)), fontsize=20)
 plt.xlabel('T - G', fontsize=20)
 plt.xticks(fontsize=15)
 plt.xlim([5, 6.2])
@@ -182,20 +180,20 @@ cnts, binns = np.histogram(clipped_cross_match.tmg,
                            bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int))
 tmg_zpt = binns[np.argmax(cnts)]
 
-plt.figure(figsize=(9, 6))
+plt.figure(figsize=(12, 6))
 plt.hist(clipped_cross_match.tmg, bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int),
-         histtype='step', color='k', linewidth=3, align='left')
-plt.arrow(np.around(tmg_zpt, decimals=2), np.max(cnts) + 10, 0, 25, color='r')
-plt.text(np.around(tmg_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_g$=' +
-         str(np.around(tmg_zpt, decimals=2)) + r'$\pm$' +
-         str(np.around(std_tmg, decimals=2)), fontsize=20)
-plt.xlabel('T - g', fontsize=20)
+         histtype='step', color='darkgreen', linewidth=3, align='left')
+plt.arrow(np.around(tmg_zpt, decimals=2), np.max(cnts) + 10, 0, 25, color='darkgreen')
+#plt.text(np.around(tmg_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_g$=' +
+#         str(np.around(tmg_zpt, decimals=2)) + r'$\pm$' +
+#         str(np.around(std_tmg, decimals=2)), fontsize=20)
+plt.xlabel(r'T - $\lambda$', fontsize=20)
 plt.xticks(fontsize=15)
-plt.xlim([4.6, 5.4])
+# plt.xlim([4.6, 5.4])
 plt.ylabel('Count', fontsize=20)
 plt.yticks(fontsize=15)
-plt.show()
-plt.close()
+# plt.show()
+# plt.close()
 Utils.log("g = T - " + str(np.around(tmg_zpt, decimals=2)) + "+/-" + str(np.around(std_tmg, decimals=2)), "info")
 
 # T - r zeropoint
@@ -205,20 +203,20 @@ cnts, binns = np.histogram(clipped_cross_match.tmr,
                            bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int))
 tmr_zpt = binns[np.argmax(cnts)]
 
-plt.figure(figsize=(9, 6))
+# plt.figure(figsize=(9, 6))
 plt.hist(clipped_cross_match.tmr, bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int),
-         histtype='step', color='k', linewidth=3, align='left')
+         histtype='step', color='r', linewidth=3, align='left')
 plt.arrow(np.around(tmr_zpt, decimals=2), np.max(cnts) + 10, 0, 25, color='r')
-plt.text(np.around(tmr_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_r$=' +
-         str(np.around(tmr_zpt, decimals=2)) + r'$\pm$' +
-         str(np.around(std_tmr, decimals=2)), fontsize=20)
-plt.xlabel('T - r', fontsize=20)
-plt.xticks(fontsize=15)
-plt.xlim([5.1, 6.1])
-plt.ylabel('Count', fontsize=20)
-plt.yticks(fontsize=15)
+#plt.text(np.around(tmr_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_r$=' +
+#         str(np.around(tmr_zpt, decimals=2)) + r'$\pm$' +
+#         str(np.around(std_tmr, decimals=2)), fontsize=20)
+#plt.xlabel('T - r', fontsize=20)
+#plt.xticks(fontsize=15)
+#plt.xlim([5.1, 6.1])
+#plt.ylabel('Count', fontsize=20)
+#plt.yticks(fontsize=15)
 #plt.show()
-plt.close()
+#plt.close()
 Utils.log("r = T - " + str(np.around(tmr_zpt, decimals=2)) + "+/-" + str(np.around(std_tmr, decimals=2)), "info")
 
 # T - i zeropoint
@@ -228,19 +226,21 @@ cnts, binns = np.histogram(clipped_cross_match.tmi,
                            bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int))
 tmi_zpt = binns[np.argmax(cnts)]
 
-plt.figure(figsize=(9, 6))
+# plt.figure(figsize=(9, 6))
 plt.hist(clipped_cross_match.tmi, bins=np.around(np.sqrt(len(clipped_cross_match)), decimals=0).astype(int),
-         histtype='step', color='k', linewidth=3, align='left')
-plt.arrow(np.around(tmi_zpt, decimals=2), np.max(cnts) + 10, 0, 25, color='r')
-plt.text(np.around(tmi_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_i$=' +
-         str(np.around(tmi_zpt, decimals=2)) + r'$\pm$' +
-         str(np.around(std_tmi, decimals=2)), fontsize=20)
-plt.xlabel('T - i', fontsize=20)
-plt.xticks(fontsize=15)
-plt.xlim([5.2, 6.6])
-plt.ylabel('Count', fontsize=20)
-plt.yticks(fontsize=15)
-# plt.show()
+         histtype='step', color='maroon', linewidth=3, align='left')
+plt.arrow(np.around(tmi_zpt, decimals=2), np.max(cnts) + 10, 0, 25, color='maroon')
+# plt.text(np.around(tmi_zpt, decimals=2) + 0.01, np.max(cnts) + 20, r'$\Delta_i$=' +
+#          str(np.around(tmi_zpt, decimals=2)) + r'$\pm$' +
+#          str(np.around(std_tmi, decimals=2)), fontsize=20)
+#plt.xlabel('T - i', fontsize=20)
+#plt.xticks(fontsize=15)
+#plt.xlim([5.2, 6.6])
+#plt.ylabel('Count', fontsize=20)
+#plt.yticks(fontsize=15)
+plt.savefig("zerpoints.png", dpi=200, bbox_inches='tight')
+plt.show()
+
 plt.close()
 Utils.log("i = T - " + str(np.around(tmi_zpt, decimals=2)) + "+/-" + str(np.around(std_tmi, decimals=2)), "info")
 
