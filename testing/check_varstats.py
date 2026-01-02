@@ -25,7 +25,7 @@ star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '
                         low_memory=False)
 
 f = open(Configuration.ONE_DRIVE + 'varstats/' + Configuration.FIELD + '_varstats.txt', 'w')
-f.write('name object_type var_type var_period mag rms d90 Jstet Lstet p1 pwr1 fap1 p2 pwr2 fap2 p3 pwr3 fap3 p4 pwr4 fap4 p5 pwr5 fap5\n')
+f.write('name object_type var_type var_period mag rms full_rms erms d90 Jstet Lstet p1 pwr1 fap1 p2 pwr2 fap2 p3 pwr3 fap3 p4 pwr4 fap4 p5 pwr5 fap5\n')
 
 mgs = np.arange(14, 27)
 err_zpt = np.array([56.02083333,  9.6       ,  9.26666667,  4.88235294,  3.34285714,
