@@ -104,7 +104,7 @@ class Configuration:
     LIGHTCURVE_FIELD_DETREND_DIRECTORY = LIGHTCURVE_DIRECTORY + FIELD + "/detrend"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
     FLUX_DIRECTORY = DATA_DIRECTORY + "flux/"
-    ONE_DRIVE = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Research/TOROS/"
+    ONE_DRIVE = "C:\\Users\\ryanj\\OneDrive - The University of Texas-Rio Grande Valley\\Research\\TOROS\\"
 
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY, FLUX_DIRECTORY,

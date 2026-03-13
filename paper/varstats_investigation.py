@@ -16,7 +16,7 @@ import numpy as np
 import statistics
 
 # read in the star list
-star_list = pd.read_csv(Configuration.ONE_DRIVE + 'master/' + Configuration.FIELD + '/' + Configuration.FIELD + '_star_list.txt',
+star_list = pd.read_csv(Configuration.ONE_DRIVE + 'master\\' + Configuration.FIELD + '\\' + Configuration.FIELD + '_star_list.txt',
                         delimiter=' ',
                         header=0,
                         low_memory=False)
@@ -24,7 +24,7 @@ star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] 
                                 (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
 
 # read in the uncertainties file
-errors = pd.read_csv(Configuration.ONE_DRIVE + 'varstats/' + Configuration.FIELD + '_errors.txt',
+errors = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_errors.txt',
                          delimiter=' ',
                          names=['name', 'mag', 'rms', 'erms'],
                          low_memory=False)
@@ -32,7 +32,7 @@ errors['gc_star'] = star_list['gc_star'].to_numpy()
 errors['var_type'] = star_list['var_type'].to_numpy()
 
 # read in the varstats file
-varstats = pd.read_csv(Configuration.ONE_DRIVE + 'varstats/' + Configuration.FIELD + '_varstats.txt',
+varstats = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_varstats.txt',
                        delimiter=' ',
                        header=0,
                        low_memory=False)
@@ -50,7 +50,7 @@ zpt_g = 5.15
 zpt_r = 5.55
 zpt_i = 5.62
 
-# Get the J/L cutoff
+# Get the J\\L cutoff
 cnts, binns = np.histogram(nonvars.Jstet.to_numpy() / nonvars.Lstet.to_numpy(),
                            bins=np.around(np.sqrt(len(nonvars)), decimals=0).astype(int))
 
@@ -62,7 +62,7 @@ comp_max = binns[np.argmax(cnts)]
 var_metric_cutoff = comp_max + 2 * comp_std
 
 # plt.figure(figsize=(9, 6))
-# plt.hist(nonvars.Jstet.to_numpy() / nonvars.Lstet.to_numpy(),
+# plt.hist(nonvars.Jstet.to_numpy() \\ nonvars.Lstet.to_numpy(),
 #          bins=np.around(np.sqrt(len(nonvars)), decimals=0).astype(int),
 #          histtype='step', color='k', linewidth=3, align='left')
 # plt.plot((np.around(comp_max + 2 * comp_std, decimals=2), np.around(comp_max + 2 * comp_std, decimals=2)),
@@ -119,7 +119,7 @@ for idx, row in varstats.iterrows():
     # determine basic variability testing
     var_metric = row.Jstet / row.Lstet
 
-    lc = pd.read_csv(Configuration.ONE_DRIVE + "lc/" + Configuration.FIELD + "/" + row['name'], sep=' ', header=0)
+    lc = pd.read_csv(Configuration.ONE_DRIVE + "lc\\" + Configuration.FIELD + "\\" + row['name'], sep=' ', header=0)
     ok_data = sc(lc.mag, sigma=3)
     ok_data.mask[np.argwhere(lc.mag == 0)] = True
     ok_data.mask[np.argwhere(lc.mag > 25)] = True
@@ -134,39 +134,67 @@ for idx, row in varstats.iterrows():
     cntdy = lc_agg['count'].to_numpy()
     
     if len(chi2[(chi2 > 3) & (cntdy > 5)] > 0):
-        plt.scatter(lc.jd, lc.mag, c='k', marker='.')
-        cut_lc = lc[lc['days'].isin(dys[chi2 > 3])]
-        plt.scatter(cut_lc.jd, cut_lc.mag, c='r')
-        plt.gca().invert_yaxis()
-        plt.show()
+        if (np.argwhere(chi2 > 3)[0] == 1) & (row.mag > 16):
+            plt.figure(figsize=(9,6))
+            plt.errorbar(lc.jd - 2460580, lc.mag, yerr=lc.err, c='k', fmt='none')
+            plt.scatter(lc.jd - 2460580, lc.mag, c='k', marker='.')
+            plt.xlabel('JD - 2460580 [d]', fontsize=20)
+            plt.ylabel(r'$T_G$', fontsize=20)
+            plt.xticks(fontsize=15)
+            plt.yticks(fontsize=15)
+            plt.ylim([16.7, 16.51])
+            cut_lc = lc[lc['days'].isin(dys[chi2 > 3])]
+            plt.errorbar(cut_lc.jd - 2460580, cut_lc.mag, yerr=cut_lc.err, c='r', fmt='none')
+            plt.scatter(cut_lc.jd - 2460580, cut_lc.mag, c='r', marker='.')
+            # plt.arrow(cut_lc.jd.mean() - 2460580, cut_lc.mag.mean() + 2 * sg, 0, sg, color='r', linewidth=2)
+            # plt.gca().invert_yaxis()
+            plt.savefig("aas_flare.png", dpi=200, bbox_inches='tight')
+            plt.show()
+            plt.close()
 
-    # loop through the various identified periods
-    if (row.p1 < 51) & (row.fap1 < 0.01):
-        n_allies = 1 - len(periods[periods == row.p1]) / np.max(cnts)
-        n_powers = 1 - len(powers[(periods == row.p1) & (powers > row.pwr1)]) / len(powers[periods == row.p1])
+            plt.figure(figsize=(9,6))
 
-        p1_pass = np.around(n_powers * n_allies, decimals=3)
+            plt.xlabel('JD - 2460580 [d]', fontsize=20)
+            plt.ylabel(r'$T_G$', fontsize=20)
+            plt.xticks(fontsize=15)
+            plt.yticks(fontsize=15)
 
-    if (row.p2 < 51) & (row.fap2 < 0.01):
-        n_allies = 1 - len(periods[periods == row.p2]) / np.max(cnts)
-        n_powers = 1 - len(powers[(periods == row.p2) & (powers > row.pwr2)]) / len(powers[periods == row.p2])
+            cut_lc = lc[lc['days'].isin(dys[chi2 > 3])]
+            plt.errorbar(cut_lc.jd - 2460580, cut_lc.mag, yerr=cut_lc.err, c='r', fmt='none')
+            plt.scatter(cut_lc.jd - 2460580, cut_lc.mag, c='r')
+            plt.ylim([16.69, 16.56])
+            plt.savefig("aas_flare_zoom.png", dpi=200, bbox_inches='tight')
+            plt.show()
+            plt.close()
 
-        p2_pass = np.around(n_powers * n_allies, decimals=3)
 
-    if (row.p3 < 51) & (row.fap3 < 0.01):
-        n_allies = 1 - len(periods[periods == row.p3]) / np.max(cnts)
-        n_powers = 1 - len(powers[(periods == row.p3) & (powers > row.pwr3)]) / len(powers[periods == row.p3])
-
-        p3_pass = np.around(n_powers * n_allies, decimals=3)
-
-    if (row.p4 < 51) & (row.fap4 < 0.01):
-        n_allies = 1 - len(periods[periods == row.p4]) / np.max(cnts)
-        n_powers = 1 - len(powers[(periods == row.p4) & (powers > row.pwr4)]) / len(powers[periods == row.p4])
-
-        p4_pass = np.around(n_powers * n_allies, decimals=3)
-
-    if (row.p5 < 51) & (row.fap5 < 0.01):
-        n_allies = 1 - len(periods[periods == row.p5]) / np.max(cnts)
-        n_powers = 1 - len(powers[(periods == row.p5) & (powers > row.pwr5)]) / len(powers[periods == row.p5])
-
-        p5_pass = np.around(n_powers * n_allies, decimals=3)
+    # # loop through the various identified periods
+    # if (row.p1 < 51) & (row.fap1 < 0.01):
+    #     n_allies = 1 - len(periods[periods == row.p1]) / np.max(cnts)
+    #     n_powers = 1 - len(powers[(periods == row.p1) & (powers > row.pwr1)]) / len(powers[periods == row.p1])
+    #
+    #     p1_pass = np.around(n_powers * n_allies, decimals=3)
+    #
+    # if (row.p2 < 51) & (row.fap2 < 0.01):
+    #     n_allies = 1 - len(periods[periods == row.p2]) / np.max(cnts)
+    #     n_powers = 1 - len(powers[(periods == row.p2) & (powers > row.pwr2)]) / len(powers[periods == row.p2])
+    #
+    #     p2_pass = np.around(n_powers * n_allies, decimals=3)
+    #
+    # if (row.p3 < 51) & (row.fap3 < 0.01):
+    #     n_allies = 1 - len(periods[periods == row.p3]) / np.max(cnts)
+    #     n_powers = 1 - len(powers[(periods == row.p3) & (powers > row.pwr3)]) / len(powers[periods == row.p3])
+    #
+    #     p3_pass = np.around(n_powers * n_allies, decimals=3)
+    #
+    # if (row.p4 < 51) & (row.fap4 < 0.01):
+    #     n_allies = 1 - len(periods[periods == row.p4]) / np.max(cnts)
+    #     n_powers = 1 - len(powers[(periods == row.p4) & (powers > row.pwr4)]) / len(powers[periods == row.p4])
+    #
+    #     p4_pass = np.around(n_powers * n_allies, decimals=3)
+    #
+    # if (row.p5 < 51) & (row.fap5 < 0.01):
+    #     n_allies = 1 - len(periods[periods == row.p5]) / np.max(cnts)
+    #     n_powers = 1 - len(powers[(periods == row.p5) & (powers > row.pwr5)]) / len(powers[periods == row.p5])
+    #
+    #     p5_pass = np.around(n_powers * n_allies, decimals=3)
