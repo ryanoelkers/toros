@@ -11,6 +11,13 @@ from astropy.stats import sigma_clipped_stats as scs
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+errs = pd.read_csv("/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/FIELD_0e.001_errors.txt", sep=' ')
+
+plt.scatter(errs.mag, errs.rms, c='k', alpha=0.1)
+plt.scatter(errs.mag, errs.erms, c='r', alpha=0.1)
+# plt.scatter(errs.mag, errs.orms, c='orange', alpha=0.1)
+plt.yscale('log')
+plt.show()
 
 star_list = pd.read_csv("/Users/yuw816/Data/toros/commissioning/master/FIELD_0e.001/"
                         + Configuration.FIELD + '_star_list.txt',
