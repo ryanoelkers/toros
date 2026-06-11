@@ -60,7 +60,7 @@ if master_skip == 0:
     # make the final star list based on available photometry
     cut_list = star_list[(star_list.gc_star == 0) &
                          (star_list.object_type == 'Star') &
-                         (star_list.V > 0)].copy().reset_index(drop=True)
+                         (star_list.V > 0) & (star_list.V < 19.5)].copy().reset_index(drop=True)
     cut_list = cut_list[['star_id', 'ra', 'dec', 'V', 'G', 'Bp', 'Rp', 'object_type']].copy().reset_index(drop=True)
 
     # now concatenate the two lists
@@ -86,28 +86,49 @@ for idx, row in lsst_list.iterrows():
     Utils.log("Working on " + row.star_id + '.', "info")
     f = open(Configuration.ANALYSIS_DIRECTORY + "lsst_sources/lc_files/" + row.star_id + ".lc", "w")
     f.write('jd mag mag_er flux flux_er raw off x y airmass bkg nstars\n')
+
     for idy, file in enumerate(files):
-        flux = pd.read_csv(Configuration.ANALYSIS_DIRECTORY + "lsst_sources/flux_files/" + file,
-                           sep=' ', skiprows=range(1, idx + 1), nrows=1)
 
-        f.write(str(np.around(flux['jd'].values[0], decimals=6)) + ' ' +
-                str(np.around(flux['mag'].values[0], decimals=4)) + ' ' + str(np.around(flux['mag_er'].values[0], decimals=4)) + ' ' +
-                str(np.around(flux['flux'].values[0], decimals=2)) + ' ' + str(np.around(flux['flux_er'].values[0], decimals=2)) + ' ' +
-                str(np.around(flux['raw'].values[0], decimals=6)) + ' ' + str(np.around(flux['off'].values[0], decimals=6)) + ' ' +
-                str(np.around(flux['x'].values[0], decimals=6)) + ' ' + str(np.around(flux['y'].values[0], decimals=2)) + ' ' +
-                str(np.around(flux['airmass'].values[0], decimals=3)) + ' ' + str(np.around(flux['bkg'].values[0], decimals=0)) + ' ' +
-                str(np.around(flux['nstars'].values[0], decimals=0)) +'\n')
+        flux = pd.read_csv(Configuration.ANALYSIS_DIRECTORY + "lsst_sources/flux_files/" + file, sep=' ')
 
+        if len(flux[flux.star_id == row.star_id]) > 0:
+            f.write(str(np.around(flux.loc[flux.star_id == row.star_id, 'jd'].squeeze(), decimals=6)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'mag'].squeeze(), decimals=4)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'mag_er'].squeeze(), decimals=4)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'flux'].squeeze(), decimals=2)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'flux_er'].squeeze(), decimals=2)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'raw'].squeeze(), decimals=6)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'off'].squeeze(), decimals=6)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'x'].squeeze(), decimals=6)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'y'].squeeze(), decimals=2)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'airmass'].squeeze(), decimals=3)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'bkg'].squeeze(), decimals=0)) + ' ' +
+                    str(np.around(flux.loc[flux.star_id == row.star_id,'nstars'].squeeze(), decimals=0)) +'\n')
     f.close()
 
     lc = pd.read_csv(Configuration.ANALYSIS_DIRECTORY + "lsst_sources/lc_files/" + row.star_id + ".lc", sep=' ')
-    # plt.errorbar(lc[lc.mag > 0].jd - 2460584, lc[lc.mag > 0].mag, yerr=lc[lc.mag > 0].mag_er, fmt='none', c='k')
-    plt.scatter(lc[lc.mag > 0].jd - 2460584, lc[lc.mag > 0].mag, c='k')
-    plt.scatter(lc[lc.mag > 0].jd - 2460584, lc[lc.mag > 0].raw, c='r')
-    plt.xlabel('JD - 2460584 [d]')
-    plt.ylabel('V$_{TOROS}$')
-    plt.gca().invert_yaxis()
-    plt.savefig(Configuration.ANALYSIS_DIRECTORY + '/lsst_sources/lc_files/' + str(row.star_id) + '.png',
-                bbox_inches='tight')
-    plt.show()
-    plt.close()
+    lc = lc.sort_values(by='jd')
+    lc.to_csv(Configuration.ANALYSIS_DIRECTORY + "lsst_sources/lc_files/" + row.star_id + ".lc", sep=' ', index=False)
+
+    if row.star_id == 'CO_TUC':
+        lc['ph'] = (lc.jd - lc.jd[0]) / 0.37143 % 1
+        plt.errorbar(lc[lc.mag > 0].ph, lc[lc.mag > 0].mag, yerr=lc[lc.mag > 0].mag_er, fmt='none', c='k')
+        plt.scatter(lc[lc.mag > 0].ph, lc[lc.mag > 0].mag, c='k')
+        plt.xlabel('Phase')
+        plt.ylabel('V$_{TOROS}$')
+        plt.gca().invert_yaxis()
+        plt.savefig(Configuration.ANALYSIS_DIRECTORY + '/lsst_sources/lc_files/' + str(row.star_id) + '.png',
+                    bbox_inches='tight')
+        plt.show()
+        plt.close()
+    else:
+        plt.errorbar(lc[lc.mag > 0].jd - 2460584, lc[lc.mag > 0].mag, yerr=lc[lc.mag > 0].mag_er, fmt='none', c='k')
+        plt.scatter(lc[lc.mag > 0].jd - 2460584, lc[lc.mag > 0].mag, c='k')
+
+        plt.xlabel('Phase')
+        plt.ylabel('V$_{TOROS}$')
+        plt.gca().invert_yaxis()
+        plt.savefig(Configuration.ANALYSIS_DIRECTORY + '/lsst_sources/lc_files/' + str(row.star_id) + '.png',
+                    bbox_inches='tight')
+        plt.show()
+        plt.close()

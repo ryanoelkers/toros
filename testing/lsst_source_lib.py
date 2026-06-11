@@ -31,76 +31,74 @@ class Sourcelib:
     @staticmethod
     def master_phot(cut_list):
 
-        if os.path.isfile(Configuration.ANALYSIS_DIRECTORY + "/lsst_sources/" + "master_phot.txt"):
-            star_list = pd.read_csv(Configuration.ANALYSIS_DIRECTORY + "/lsst_sources/" + "master_phot.txt", sep=' ', low_memory=False)
-        else:
-            star_list = cut_list.copy().reset_index(drop=True)
+        star_list = cut_list.copy().reset_index(drop=True)
 
-            # set up the aperture statistics
-            aper_size = 5
-            annuli_inner = 7
-            annuli_outer = 9
+        # set up the aperture statistics
+        aper_size = 4
+        annuli_inner = 5
+        annuli_outer = 7
 
-            # read in the master frame
-            master, master_header = fits.getdata(Configuration.ANALYSIS_DIRECTORY + "/lsst_sources/" +
-                                                 "FIELD_0e.001_master.fits",
-                                                 header=True)
+        # read in the master frame
+        master, master_header = fits.getdata(Configuration.ANALYSIS_DIRECTORY + "/lsst_sources/" +
+                                             "FIELD_0e.001_master.fits",
+                                             header=True)
 
-            # get the header file and convert to x/y pixel positions
-            w = WCS(master_header)
-            ra = star_list.ra.to_numpy()
-            dec = star_list.dec.to_numpy()
+        # get the header file and convert to x/y pixel positions
+        w = WCS(master_header)
+        ra = star_list.ra.to_numpy()
+        dec = star_list.dec.to_numpy()
 
-            # convert to x, y
-            x, y = w.all_world2pix(ra, dec, 0)
+        # convert to x, y
+        x, y = w.all_world2pix(ra, dec, 0)
 
-            # add the x/y to the star data frame
-            star_list['x'] = x
-            star_list['y'] = y
+        # add the x/y to the star data frame
+        star_list['x'] = x
+        star_list['y'] = y
 
-            # centroid the star list
-            star_list['xcen'], star_list['ycen'] = centroid_sources(master,
-                                                                    star_list.x.to_numpy(),
-                                                                    star_list.y.to_numpy(),
-                                                                    box_size=5)
-            bd_idxs = np.where(np.isnan(star_list.xcen) | np.isnan(star_list.ycen))
-            if len(bd_idxs[0]) > 0:
-                for bd_idx in bd_idxs[0]:
-                    star_list.loc[bd_idx, 'xcen'] = star_list.loc[bd_idx, 'x']
-                    star_list.loc[bd_idx, 'ycen'] = star_list.loc[bd_idx, 'y']
+        # centroid the star list
+        star_list['xcen'], star_list['ycen'] = centroid_sources(master,
+                                                                star_list.x.to_numpy(),
+                                                                star_list.y.to_numpy(),
+                                                                box_size=5)
+        bd_idxs = np.where(np.isnan(star_list.xcen) | np.isnan(star_list.ycen))
+        if len(bd_idxs[0]) > 0:
+            for bd_idx in bd_idxs[0]:
+                star_list.loc[bd_idx, 'xcen'] = star_list.loc[bd_idx, 'x']
+                star_list.loc[bd_idx, 'ycen'] = star_list.loc[bd_idx, 'y']
 
-            # get the position information
-            positions = np.transpose((star_list.xcen.to_numpy(), star_list.ycen.to_numpy()))
+        # get the position information
+        positions = np.transpose((star_list.xcen.to_numpy(), star_list.ycen.to_numpy()))
 
-            # set up the aperture objects
-            aperture = CircularAperture(positions, r=aper_size)
-            aperture_area = aperture.area
+        # set up the aperture objects
+        aperture = CircularAperture(positions, r=aper_size)
+        aperture_area = aperture.area
 
-            # run the photometry to get the data table
-            phot_table = aperture_photometry(master, aperture, method='exact')
+        # run the photometry to get the data table
+        phot_table = aperture_photometry(master, aperture, method='exact')
 
-            # get the background stats
-            annulus_aperture = CircularAnnulus(positions, r_in=annuli_inner, r_out=annuli_outer)
-            aperstats = ApertureStats(master, annulus_aperture)
+        # get the background stats
+        annulus_aperture = CircularAnnulus(positions, r_in=annuli_inner, r_out=annuli_outer)
+        aperstats = ApertureStats(master, annulus_aperture)
 
-            # local sky-subtracted background in ADU
-            bkg_mean = aperstats.mean * aperture_area * Configuration.GAIN
+        # local sky-subtracted background in ADU
+        bkg_mean = aperstats.mean * aperture_area * Configuration.GAIN
 
-            # local background in ADU
-            bkg_full = (master_header['sky'] + aperstats.mean) * aperture_area * Configuration.GAIN
+        # local background in ADU
+        bkg_full = (master_header['sky'] + aperstats.mean) * aperture_area * Configuration.GAIN
 
-            # extract the flux from the table
-            star_list['master_flux'] = (np.array(phot_table['aperture_sum']) * Configuration.GAIN) - bkg_mean
-            star_list['master_flux_er'] = np.sqrt(np.sqrt(np.abs(star_list['master_flux'])) ** 2 + np.sqrt(bkg_full) ** 2)
-            star_list = star_list[star_list.master_flux > 0].copy().reset_index(drop=True)
+        # extract the flux from the table
+        star_list['master_flux'] = (np.array(phot_table['aperture_sum']) * Configuration.GAIN) # - bkg_mean
+        star_list['master_flux_er'] = np.sqrt(np.sqrt(np.abs(star_list['master_flux'])) ** 2 + np.sqrt(bkg_full) ** 2)
+        star_list = star_list[star_list.master_flux > 0].copy().reset_index(drop=True)
 
-            # get the master magnitude
-            star_list['master_mag'] = 25 - 2.5 * np.log10(star_list['master_flux']) + 2.5 * np.log10(Configuration.EXP_TIME)
-            star_list['master_mag_er'] = (np.log(10.) / 2.5) * (star_list['master_flux_er'] / star_list['master_flux'])
+        # get the master magnitude
+        star_list['master_mag'] = 25 - 2.5 * np.log10(star_list['master_flux']) + 2.5 * np.log10(Configuration.EXP_TIME)
+        star_list['master_mag_er'] = (np.log(10.) / 2.5) * (star_list['master_flux_er'] / star_list['master_flux'])
 
-            star_list.to_csv(Configuration.ANALYSIS_DIRECTORY + "/lsst_sources/" + "master_phot.txt", sep=' ',
-                             index=False)
-        _, t_to_v, _ = scs(star_list[star_list.master_mag < 20].master_mag - star_list[star_list.master_mag < 20].V, sigma=3)
+        star_list.to_csv(Configuration.ANALYSIS_DIRECTORY + "/lsst_sources/" + "master_phot.txt", sep=' ',
+                         index=False)
+
+        _, t_to_v, _ = scs(star_list[star_list.master_mag < 19.5].master_mag - star_list[star_list.master_mag < 19.5].V, sigma=3)
         star_list['master_mag'] = star_list['master_mag'] - t_to_v
 
         return t_to_v, star_list
@@ -134,9 +132,9 @@ class Sourcelib:
             jd = time.jd
 
             # set up the aperture statistics
-            aper_size = 5
-            annuli_inner = 7
-            annuli_outer = 9
+            aper_size = 4
+            annuli_inner = 5
+            annuli_outer = 7
 
             # get the position information
             positions = np.transpose((star_list.xcen.to_numpy(), star_list.ycen.to_numpy()))
@@ -159,7 +157,7 @@ class Sourcelib:
             bkg_full = (header['sky'] + aperstats.mean) * aperture_area * Configuration.GAIN
 
             # extract the flux from the table and combine with master flux
-            flux = (np.array(phot_table['aperture_sum']) * Configuration.GAIN) - bkg_mean
+            flux = (np.array(phot_table['aperture_sum']) * Configuration.GAIN) # - bkg_mean
             star_list['flux'] = star_list.master_flux + flux
             star_list['flux_er'] = np.sqrt(np.sqrt(np.abs(star_list['flux'])) ** 2 + np.sqrt(np.abs(bkg_full)) ** 2)
             star_list['bkg'] = bkg_full
@@ -169,7 +167,7 @@ class Sourcelib:
             star_list.loc[star_list.flux > 0, 'raw'] = (25 - 2.5 * np.log10(star_list.loc[star_list.flux > 0, 'flux']) +
                                                         2.5 * np.log10(Configuration.EXP_TIME)) - t_to_v
             star_list['mag_er'] = (np.log(10.) / 2.5) * (star_list['flux_er'] / star_list['flux'])
-            star_list[star_list.mag_er > 1] = 1
+            star_list.loc[star_list.mag_er > 1, 'mag_er'] = 1
 
             # get the offset
             diff = (star_list[(star_list.raw > 0) & (star_list.raw < 15)].raw -
