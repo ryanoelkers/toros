@@ -298,7 +298,7 @@ class Photometry:
         # extract the flux from the table
         # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
         star_flux = np.array(phot_table['aperture_sum'] - bkg_mean * aperture_area) * Configuration.GAIN
-
+        sf = np.array(phot_table['aperture_sum']) * Configuration.GAIN
         # calculate the expected photometric error
         star_error = np.abs(star_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float))
         bkg_error = bkg_total * Configuration.GAIN
@@ -313,7 +313,11 @@ class Photometry:
         # convert to magnitude
         mag = 25. - 2.5 * np.log10(flux)
         mag_er = (np.log(10.) / 2.5) * (flux_er / flux)
+        mg = 25 - 2.5 * np.log10(sf + star_list['master_flux'].to_numpy().astype(float))
 
+        plt.scatter(mag, mag - star_list.master_mag + 2, marker='.', alpha=0.2, c='k')
+        plt.scatter(mg, mg - star_list.master_mag, marker='.', alpha=0.2, c='r')
+        plt.show()
         # now correct the magnitudes for exposure time
         mag = mag + 2.5 * np.log10(Configuration.EXP_TIME)
 

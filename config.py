@@ -22,9 +22,9 @@ class Configuration:
     CLEAN_SKIP = 'Y'
     MASTER_SKIP = 'Y'
     DIFFERENCE_SKIP = 'Y'
-    PHOTOMETRY_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'N'
     LIGHTCURVE_SKIP = 'Y'
-    SYSTEMATICS_SKIP = 'N'
+    SYSTEMATICS_SKIP = 'Y'
 
     # how do you want to clean the image?
     SUBTRACT_BIAS = "Y"

@@ -22,10 +22,6 @@ from astropy.stats import sigma_clipped_stats as scs
 star_list = pd.read_csv("/Users/yuw816/Data/toros/commissioning/master/FIELD_0e.001/"
                         + Configuration.FIELD + "_star_list.txt", sep=' ', low_memory=False, index_col=0)
 
-# find the stars in 47 - Tuc
-# star_list['gc_dist'] = star_list.apply(lambda x: np.sqrt((x.x - 6800) ** 2 + (x.y - 5400) ** 2), axis=1)
-# star_list['gc_star'] = np.where(star_list.gc_dist <=2000, 1, 0)
-
 # get the flux files
 dir = "/Users/yuw816/Data/toros/commissioning/flux/"
 files = np.sort(Utils.get_all_files_per_field(dir, 'FIELD_0e.001', 'diff', '.flux')[0])
@@ -38,22 +34,27 @@ for idx, file in enumerate(files):
     flux_df = pd.read_csv(file, sep=',', low_memory=False)
 
     # get the zeropoint offset for the frame
-    _, trd[idx], _ = scs(flux_df[flux_df.mag > 0].mag -
-                         flux_df[flux_df.mag > 0].master_mag, sigma=2.5)
+    _, trd[idx], _ = scs(flux_df[flux_df.mag > 0].mag - flux_df[flux_df.mag > 0].master_mag, sigma=2.5)
     if idx % 10 == 0:
         Utils.log(str(len(files) - idx - 1), "info")
 
-var_list = star_list[star_list.var_id != '--'].copy().reset_index(drop=True)
+for idx, row in star_list.iterrows():
 
-for idx, row in var_list.iterrows():
-    try:
-        lc = pd.read_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/detrend/FIELD_0e.001_' + row.source_id + '.lc', sep=' ')
+    # read in the light curve
+    lc = pd.read_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/detrend/FIELD_0e.001_' + row.source_id + '.lc', sep=' ')
 
-        plt.scatter(lc.jd, lc.mag, c='k')
-        plt.scatter(lc.jd, lc.raw - trd, c='r')
-        plt.gca().invert_yaxis()
-        plt.show()
-    except:
-        print('no file.')
+    # read in the zeropoint offset
+    lc['zpt'] = np.around(trd, decimals=4)
 
+    if row.chip < 10:
+        lc.to_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001/0' +
+                  str(row.chip) + '/FIELD_0e.001_' + row.source_id + '.lc', sep=' ', header=True, index=False)
+    else:
+        lc.to_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001/' +
+                  str(row.chip) + '/FIELD_0e.001_' + row.source_id + '.lc', sep=' ', header=True, index=False)
+
+    lc = lc[['jd', "mag", "err", "raw", "trd", "zpt", "sky", "bkg", "x", "y", "nstars", "airmass"]]
+
+    if idx % 1000 == 0:
+        Utils.log(str(len(star_list) - idx - 1), "info")
 print('hold')

@@ -19,23 +19,27 @@ star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '
                         delimiter=' ',
                         header=0,
                         low_memory=False)
+var_list = star_list.copy().reset_index(drop=True)
 
-errors = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + '/varstats/' + Configuration.FIELD + '_errors.txt',
-                     sep=' ')
-errors['z'] = errors.rms / errors.erms
+# add new columns to star list
+var_list['tmag'] = 0.
+var_list['rms'] = 0.
+var_list['min_rms'] = 0.
+var_list['full_rms'] = 0.
+var_list['jstet'] = 0.
+var_list['lstet'] = 0.
+var_list['d90'] = 0.
+var_list['prd1'] = 0.
+var_list['pwr1'] = 0.
+var_list['fap1'] = 0.
+var_list['prd2'] = 0.
+var_list['pwr2'] = 0.
+var_list['fap2'] = 0.
+var_list['prd3'] = 0.
+var_list['pwr3'] = 0.
+var_list['fap3'] = 0.
 
-z = np.zeros(10)
-mm = np.zeros(10)
-for ii in np.arange(20, 30):
-    _, z[ii-20], _ = scs(errors[(errors.mag > ii) & (errors.mag < ii + 1)].z.to_numpy(), sigma=1)
-    mm[ii-20] = ii + 0.5
-pp = np.polyfit(mm, z, 1)
-vv = np.poly1d(pp)
-
-f = open(Configuration.LIGHTCURVE_FIELD_DIRECTORY + '/varstats/' + Configuration.FIELD + '_varstats.txt', 'w')
-f.write('name object_type var_type var_period mag daily_rms min_rms rms erms d90 Jstet Lstet p1 pwr1 fap1 p2 pwr2 fap2 p3 pwr3 fap3 p4 pwr4 fap4 p5 pwr5 fap5\n')
-
-for idx, row in star_list.iterrows():
+for idx, row in var_list.iterrows():
 
     lc = pd.read_csv(Configuration.LIGHTCURVE_DIRECTORY +
                      Configuration.FIELD + "/detrend/" +
@@ -43,46 +47,52 @@ for idx, row in star_list.iterrows():
     lc['dys'] = lc.jd.to_numpy().astype('int')
 
     tmag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
-    lc['err'] = lc.err.to_numpy() / vv(tmag)
+    var_list.loc[idx, 'tmag'] = np.around(tmag, decimals=4)
+    var_list.loc[idx, 'full_rms'] = np.around(full_rms, decimals=4)
+
     rms_vals = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'std'}).to_numpy().flatten()
     num_obs = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'count'}).to_numpy().flatten()
-    dytes = lc[lc.mag >0]['dys'].unique()
 
     try:
-        min_rms = np.min(rms_vals[num_obs >= 6])
-        dy_dte = np.argmin(rms_vals[num_obs >= 6])
-        erms = lc[lc.dys == dytes[dy_dte]].err.mean()
+        min_rms = np.around(np.min(rms_vals[num_obs >= 6]), decimals=4)
+        var_list.loc[idx, 'min_rms'] = min_rms
+
+        daily_rms = np.mean(rms_vals[num_obs >= 6])
+        var_list.loc[idx, 'rms'] = np.around(daily_rms, decimals=4)
     except:
-        min_rms = -9.9999
-        erms = lc[(lc.mag > 0) & (lc.err > 0)].err.mean()
+        min_rms = np.around(-9.9999, decimals=4)
+        var_list.loc[idx, 'min_rms'] = min_rms
+
+        daily_rms = np.around(-9.9999, decimals=4)
+        var_list.loc[idx, 'rms'] = daily_rms
 
     if (len(lc[(lc.mag > 0) & (lc.err > 0)]) > 10) & (min_rms > 0):
         mean_rms, rms, std_rms = scs(rms_vals[~np.isnan(rms_vals)], sigma=2.5)
-        d90 = np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 95) - np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 5)
-        # get the top 5 periods
-        ls = LombScargle(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(),
-                         lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy(),
-                         dy=lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy())
+        d90 = (np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 95) -
+               np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 5))
 
-        frequency, power = ls.autopower(minimum_frequency=0.02)
+        # get the top 3 periods with whitening
+        resid = lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy()
+        for idy in range(3):
+            ls = LombScargle(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(),
+                             resid,
+                             dy=lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy())
 
-        # get the FAP
-        shfl_mags = lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy()
-        mx_power = np.zeros(100)
-        ss = np.random.choice(shfl_mags, size=(100, len(shfl_mags)), replace=True)
+            # get the power spectrum
+            frequency, power = ls.autopower(minimum_frequency=0.02, maximum_frequency=48)
+            best_freq = frequency[np.argmax(power)]
+            best_power = power[np.argmax(power)]
+            best_period = 1. / best_freq
 
-        for ii in range(0, 100):
-            ss_f, ss_p = LombScargle(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(),
-                                     ss[ii],
-                                     dy=lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy()).autopower(minimum_frequency=0.02)
-            mx_power[ii] = np.max(ss_p)
+            fap = ls.false_alarm_probability(best_power, minimum_frequency=0.02, maximum_frequency=48)
 
-        pwr5 = power[np.flip(np.argsort(power))][0:5]
-        prd5 = 1. / frequency[np.flip(np.argsort(power))][0:5]
-        fap5 = np.zeros(5)
-        for ii in range(0, 5):
-            fap5[ii] = len(mx_power[mx_power >= pwr5[ii]])
+            model = ls.model(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(), best_freq)
 
+            var_list.loc[idx, 'prd' + str(idy + 1)] = best_period
+            var_list.loc[idx, 'pwr' + str(idy + 1)] = best_power
+            var_list.loc[idx, 'fap' + str(idy + 1)] = fap
+
+            resid = lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy() - model
         # get J & L stet
         wk = 1.0  # Weighting Factor
 
@@ -121,32 +131,8 @@ for idx, row in star_list.iterrows():
             kstet = 0.
         lstet = jstet * kstet / 0.7908
 
-        f.write(Configuration.FIELD + "_" + str(row.source_id) + ".lc" + ' ' +
-                row.object_type + " " + row.var_type + " " + str(np.around(row.var_period, decimals=4)) + " " +
-                str(np.around(tmag, decimals=4)) + ' ' + str(np.around(rms, decimals=4)) + ' ' +
-                str(np.around(min_rms, decimals=4)) + ' ' +
-                str(np.around(full_rms, decimals=4)) + ' ' + str(np.around(erms, decimals=4)) + ' ' +
-                str(np.around(d90, decimals=4)) + ' ' + str(np.around(jstet, decimals=4)) + ' ' +
-                str(np.around(lstet, decimals=4)) + ' ' +
-                str(np.around(prd5[0], decimals=4)) + ' ' + str(np.around(pwr5[0], decimals=4)) + ' ' + str(np.around(fap5[0], decimals=4)) + ' ' +
-                str(np.around(prd5[1], decimals=4)) + ' ' + str(np.around(pwr5[1], decimals=4)) + ' ' + str(np.around(fap5[1], decimals=4)) + ' ' +
-                str(np.around(prd5[2], decimals=4)) + ' ' + str(np.around(pwr5[2], decimals=4)) + ' ' + str(np.around(fap5[2], decimals=4)) + ' ' +
-                str(np.around(prd5[3], decimals=4)) + ' ' + str(np.around(pwr5[3], decimals=4)) + ' ' + str(np.around(fap5[3], decimals=4)) + ' ' +
-                str(np.around(prd5[4], decimals=4)) + ' ' + str(np.around(pwr5[4], decimals=4)) + ' ' + str(np.around(fap5[4], decimals=4)) + '\n')
-    else:
-        f.write(Configuration.FIELD + "_" + str(row.source_id) + ".lc" + ' ' +
-                row.object_type + " " + row.var_type + " " + str(np.around(row.var_period, decimals=4)) + " " +
-                str(np.around(tmag, decimals=4)) + ' ' + str(np.around(rms, decimals=4)) + ' ' +
-                str(np.around(min_rms, decimals=4)) + ' ' +
-                str(np.around(full_rms, decimals=4)) + ' ' + str(np.around(erms, decimals=4)) + ' ' +
-                str(-9.9999) + ' ' + str(-9.9999) + ' ' +
-                str(-9.9999) + ' ' +
-                str(-9.9999) + ' ' + str(-9.9999) + ' ' + str(-9.9999) + ' ' +
-                str(-9.9999) + ' ' + str(-9.9999) + ' ' + str(-9.9999) + ' ' +
-                str(-9.9999) + ' ' + str(-9.9999) + ' ' + str(-9.9999) + ' ' +
-                str(-9.9999) + ' ' + str(-9.9999) + ' ' + str(-9.9999) + ' ' +
-                str(-9.9999) + ' ' + str(-9.9999) + ' ' + str(-9.9999) + '\n')
     if idx % 1000 == 0:
         Utils.log('Varstats calculated for ' + str(idx + 1) + ' stars. ' + str(len(star_list) - idx - 1) + ' stars remain.',
                   'info')
-f.close()
+star_list.to_csv("/Users/yuw816/Data/toros/commissioning/lc/" + Configuration.FIELD + "_varstats.txt",
+                 sep=' ', header=True, index=False)
