@@ -79,7 +79,7 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/Users/yuw816/Development/toros/"
+    WORKING_DIRECTORY = "/Users/oelkerrj/PycharmProjects/toros/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -87,8 +87,8 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
-    RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
+    DATA_DIRECTORY = "/Volumes/OUMUAMUA/toros/commissioning/"
+    RAW_DIRECTORY = "/Volumes/OUMUAMUA/toros/commissioning/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"
