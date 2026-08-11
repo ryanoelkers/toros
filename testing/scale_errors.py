@@ -100,12 +100,12 @@ for idx, row in star_list.iterrows():
     lc = lc[['jd', 'mag', 'err', 'raw', 'err_nscl', 'trd', 'sky', 'bkg', 'x', 'y', 'nstars', 'airmass']]
 
     if row.chip < 10:
-        lc.to_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/' + Configuration.FIELD + '/rescale/0' +
-                             str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
+        lc.to_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/0' +
+                  str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
                   sep=' ', index=False)
     else:
-        lc.to_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/' + Configuration.FIELD + '/rescale/' +
-                             str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
+        lc.to_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/' +
+                  str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
                   sep=' ', index=False)
     if idx % 1000 == 0:
         Utils.log(str(len(star_list) - idx - 1) + ' stars remaining for error calculations.', "info")
