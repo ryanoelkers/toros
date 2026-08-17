@@ -19,44 +19,47 @@ import warnings
 warnings.simplefilter('error', RuntimeWarning)
 
 # read in the full star list that includes variability information
-mac_dir = "/Users/yuw816/Data/toros/commissioning/lc/"
-win_dir = "E:\\toros\\commissioning\\"
+mac_dir = "/Users/yuw816/Data/toros/commissioning/"
+
+star_list = pd.read_csv(mac_dir + "lc/" + Configuration.FIELD + "_varstats.txt",
+                       delimiter=' ',
+                       header=0,
+                       low_memory=False)
+
 
 # read in the lsst data
-lsst_vars = pd.read_csv(win_dir + "lsst\\" + "lsst_data_47tuc_variables.csv",
+lsst_vars = pd.read_csv(mac_dir + "lsst/" + "lsst_data_47tuc_variables.csv",
                         delimiter=',',
                         header=0,
                         low_memory=False,
                         index_col=0)
 
 lsst_vars = lsst_vars.groupby('diaObjectId').agg({'coord_ra': 'mean', 'coord_dec': 'mean', 'psfFlux':'max'}).reset_index()
-lsst_vars['psfMag'] = lsst_vars.apply(lambda x: 31.4 - 2.5*np.log10(x.psfFlux), axis=1)
+lsst_vars['psfMag'] = lsst_vars.apply(lambda x: 31.4 - 2.5 * np.log10(x.psfFlux), axis=1)
 
 # get the header file and convert to x/y pixel positions
-master, master_header = fits.getdata(win_dir + "\\master\\FIELD_0e.001\\FIELD_0e.001_master.fits", header=True)
+master, master_header = fits.getdata(mac_dir + "/master/FIELD_0e.001/FIELD_0e.001_master.fits", header=True)
 w = WCS(master_header)
 ra = lsst_vars.coord_ra.to_numpy()
 dec = lsst_vars.coord_dec.to_numpy()
 
 # convert to x, y
+# edge of the frame (600 < x < 10560) (0 < y < 9700)
 x, y = w.all_world2pix(ra, dec, 0)
-lsst_vars = lsst_vars[(x > 0) & (x < 10560) & (y > 0) & (y < 10560)].copy().reset_index(drop=True)
+lsst_vars = lsst_vars[(x > 500) & (x < 10540) & (y > 20) & (y < 9700)].copy().reset_index(drop=True)
 
-star_list = pd.read_csv(win_dir + "lc\\" + Configuration.FIELD + "_varstats.txt",
+star_list = pd.read_csv(mac_dir + "lc/" + Configuration.FIELD + "_varstats.txt",
                        delimiter=' ',
                        header=0,
                        low_memory=False)
 
-star_list['gc_star'] = np.where((star_list['xcen'] > 5500) & (star_list['xcen'] < 8100) &
-                                (star_list['ycen'] > 4100) & (star_list['ycen'] < 6800), 1, 0)
-
-iso_star_list = star_list[star_list.prox == 0].copy().reset_index(drop=True)
+iso_star_list = star_list[(star_list.prox == 0) & (star_list.var_id == '--')].copy().reset_index(drop=True)
 iso_star_list['lsst_g'] = -9
 iso_star_list['lsst_r'] = -9
 iso_star_list['lsst_i'] = -9
 
 # read in the lsst data
-lsst = pd.read_csv(win_dir + "lsst\\" + "lsst_data_47tuc_objects.csv",
+lsst = pd.read_csv(mac_dir + "lsst/" + "lsst_data_47tuc_objects.csv",
                    delimiter=',',
                    header=0,
                    low_memory=False,

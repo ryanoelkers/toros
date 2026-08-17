@@ -87,6 +87,9 @@ class Master:
             if Configuration.KNOWN_VARIABLES == 'Y':
                 star_list = Photometry.add_variable_list(star_list, master_header)
 
+            if Configuration.KNOWN_LSST == 'Y':
+                star_list = Photometry.add_lsst_list(star_list, master_header)
+
             # remove the stars outside the frame
             star_list = star_list[(star_list.x >= 500) & (star_list.x < 10540) &
                                   (star_list.y > 20) & (star_list.y <= 9700)].copy().reset_index(drop=True)
@@ -154,11 +157,28 @@ class Master:
             star_list['master_sky'] = total_bkg
 
             # only keep stars with reasonable photometry in the master list
-            star_list = star_list[(star_list['master_flux'] > 0) | (star_list['object_type'] != 'Star')]
+            # star_list = star_list[(star_list['master_flux'] > 0) | (star_list['object_type'] != 'Star')]
+            star_list = star_list[(star_list['master_flux'] > 0) & (star_list['master_mag_er'] < 0.5)]
 
             # index is reset twice to make sure the star ID matches the brightness on the master frame
             star_list = star_list.sort_values(by='master_mag').reset_index(drop=True).reset_index()
             star_list = star_list.rename(columns={'index': 'star_id'})
+
+            star_list['edge'] = 0
+            star_list['prox'] = 0
+            star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
+                                            (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
+
+            for idx, row in star_list.iterrows():
+                if (row.xcen < 700) | (row.xcen > 10460) | (row.ycen < 100) | (row.ycen > 9600):
+                    star_list.loc[idx, 'edge'] = 1
+
+                dist = np.sqrt((row.xcen - star_list.xcen) ** 2 + (row.ycen - star_list.ycen) ** 2)
+                prox = len(star_list[(dist > 0) &
+                                     (dist <= 1.5 * Configuration.APER_SIZE) &
+                                     (star_list.object_type == 'Star')])
+                if prox > 0:
+                    star_list.loc[idx, 'prox'] = 1
 
             star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
                              sep=' ',
