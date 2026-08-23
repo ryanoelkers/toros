@@ -61,19 +61,19 @@ class Photometry:
         header = 'name mag rms erms orms x y chip object_type\n'
         f.write(header)
 
-        for idx, row in star_list.iterrows():
+        for idx, row in star_list.tail(6000).iterrows():
             if idx % 1000 == 0:
-                Utils.log("Working to detrend the next 100 light curves. " +
+                Utils.log("Working to detrend the next 1000 light curves. " +
                           str(len(star_list) - idx - 1) + " light curves remain.", "info")
 
             # read in the light curve
             if row.chip < 10:
                 lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
-                                 '0'+ str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
+                                 '0'+ str(row.chip) + '/' + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
                                  sep=' ')
             else:
                 lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
-                                 str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
+                                 str(row.chip) + '/' + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
                                  sep=' ')
 
             # determine the offset in magnitude and distance from the target star
@@ -149,14 +149,17 @@ class Photometry:
                             off.append(np.median(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)]))
                         else:
                             off.append(mg_mdn)
-                # get the trend value for this observations
-                trd = np.interp(lc.mag[ii], mg, off)
+                try:
+                    # get the trend value for this observations
+                    trd = np.interp(lc.mag[ii], mg, off)
 
-                # if it is nan, then just use the median for the full day
-                if np.isnan(trd):
-                    lc.loc[ii, 'trd'] = np.nanmedian(off)
-                else:
-                    lc.loc[ii, 'trd'] = trd
+                    # if it is nan, then just use the median for the full day
+                    if np.isnan(trd):
+                        lc.loc[ii, 'trd'] = np.nanmedian(off)
+                    else:
+                        lc.loc[ii, 'trd'] = trd
+                except:
+                    lc.loc[ii, 'trd'] = -9.9999
             del trend_df
 
             lc = lc.rename(columns={'mag': 'raw'})

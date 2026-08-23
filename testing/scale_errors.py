@@ -12,27 +12,30 @@ import numpy as np
 import pandas as pd
 from astropy.stats import sigma_clipped_stats as scs
 
-# remove stars near 47 Tuc and the smallcluster
-star_list = pd.read_csv("/Volumes/OUMUAMUA/toros/commissioning/master/" + Configuration.FIELD + "/"
-                        + Configuration.FIELD + "_star_list.txt", sep=' ', low_memory=False, index_col=0)
+# remove stars near 47 Tuc and the small cluster
+star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + "_star_list.txt",
+                        sep=' ', low_memory=False, index_col=0)
 
 # redo the uncertainties?
-reydo = 'N'
+reydo = 'Y'
 
 if reydo == 'Y':
-    f = open("/Volumes/OUMUAMUA/toros/commissioning/lc/" + Configuration.FIELD + "_errors.txt", 'w')
-    f.write('file mag rms erms full_rms\n')
+    f = open(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt", 'w')
+    header = 'name mag rms erms full_rms x y chip object_type\n'
+    f.write(header)
+
     for idx, row in star_list.iterrows():
 
         if row.chip < 10:
-            lc = pd.read_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/' + Configuration.FIELD + '/0' +
-                             str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
-                             sep=' ')
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
         else:
-            lc = pd.read_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/' + Configuration.FIELD + '/' +
-                             str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
-                             sep=' ')
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
 
+        # calculate statistics for the error analysis
         mag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
         lc['dys'] = lc.jd.to_numpy().astype('int')
 
@@ -46,19 +49,25 @@ if reydo == 'Y':
             rms = full_rms
         del lc
 
-        f.write(Configuration.FIELD + '_' + row.source_id + '.lc ' +
-                str(np.around(mag, decimals=4)) + ' ' +
-                str(np.around(rms, decimals=4)) + ' ' +
-                str(np.around(erms, decimals=4)) + ' ' +
-                str(np.around(full_rms, decimals=4)) + '\n')
+        # output the statistics
+        line = (Configuration.FIELD + "_" + str(row.source_id) + ".lc" + " " +
+                str(np.around(row.master_mag, decimals=4)) + " " +
+                str(np.around(rms, decimals=4)) + " " +
+                str(np.around(erms, decimals=4)) + " " +
+                str(np.around(full_rms, decimals=4)) + " " +
+                str(np.around(row.xcen, decimals=2)) + " " +
+                str(np.around(row.ycen, decimals=2)) + " " +
+                str(int(row.chip)) + " " +
+                str(row.object_type) + "\n")
+        f.write(line)
 
         if idx % 1000 == 0:
             Utils.log(str(len(star_list) - idx - 1) + ' stars remaining for error calculations.', "info")
     f.close()
 
 # read in the error file
-errs = pd.read_csv("/Volumes/OUMUAMUA/toros/commissioning/lc/" + Configuration.FIELD + "_errors.txt",
-                   sep=" ")
+errs = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
+                   sep=" ", low_memory=False)
 
 # determine the scaling factor based on magnitude
 mx_mag = np.nanmax(errs[errs.rms > 0].mag.to_numpy())
@@ -85,13 +94,13 @@ scl_rms = e_rms / errs.erms
 for idx, row in star_list.iterrows():
 
     if row.chip < 10:
-        lc = pd.read_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/' + Configuration.FIELD + '/detrend/0' +
-                         str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
-                         sep=' ')
+        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) + '/' +
+                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                         sep=" ")
     else:
-        lc = pd.read_csv('/Volumes/OUMUAMUA/toros/commissioning/lc/' + Configuration.FIELD + '/detrend/' +
-                         str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
-                         sep=' ')
+        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) + '/' +
+                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                         sep=" ")
 
     lc.rename(columns={'err': 'err_nscl'}, inplace=True)
 
@@ -100,12 +109,12 @@ for idx, row in star_list.iterrows():
     lc = lc[['jd', 'mag', 'err', 'raw', 'err_nscl', 'trd', 'sky', 'bkg', 'x', 'y', 'nstars', 'airmass']]
 
     if row.chip < 10:
-        lc.to_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/0' +
-                  str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
+        lc.to_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + "0" + str(row.chip) + '/' +
+                  Configuration.FIELD + '_' + str(row.source_id) + '.lc',
                   sep=' ', index=False)
     else:
-        lc.to_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/' +
-                  str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
+        lc.to_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + str(row.chip) + '/'
+                  + Configuration.FIELD + '_' + row(row.source_id) + '.lc',
                   sep=' ', index=False)
     if idx % 1000 == 0:
         Utils.log(str(len(star_list) - idx - 1) + ' stars remaining for error calculations.', "info")

@@ -48,13 +48,13 @@ vary_list['simp'] = 0
 for idx, row in vary_list.iterrows():
 
     if row.chip < 10:
-        lc = pd.read_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/0' +
-                         str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
-                         sep=' ')
+        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/0' + str(row.chip) + '/' +
+                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                         sep=" ")
     else:
-        lc = pd.read_csv('/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/' +
-                         str(row.chip) + '/' + Configuration.FIELD + '_' + row.source_id + '.lc',
-                         sep=' ')
+        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/' + str(row.chip) + '/' +
+                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                         sep=" ")
     lc['dys'] = lc.jd.to_numpy().astype('int')
 
     # set up the proximity flag if necessary
@@ -184,5 +184,5 @@ for idx, row in vary_list.iterrows():
 for idx, row in vary_list.iterrows():
     vary_list.loc[idx, 'simp'] = len(vary_list[(vary_list.prd1 == row.prd1) & (vary_list.pwr1 > row.pwr1)])
 
-vary_list.to_csv("/Users/yuw816/Data/toros/commissioning/lc/" + Configuration.FIELD + "_varstats.txt",
+vary_list.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
