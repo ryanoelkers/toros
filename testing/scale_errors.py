@@ -17,7 +17,7 @@ star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + "
                         sep=' ', low_memory=False, index_col=0)
 
 # redo the uncertainties?
-reydo = 'Y'
+reydo = 'N'
 
 if reydo == 'Y':
     f = open(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt", 'w')
@@ -114,7 +114,7 @@ for idx, row in star_list.iterrows():
                   sep=' ', index=False)
     else:
         lc.to_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + str(row.chip) + '/'
-                  + Configuration.FIELD + '_' + row(row.source_id) + '.lc',
+                  + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
                   sep=' ', index=False)
     if idx % 1000 == 0:
-        Utils.log(str(len(star_list) - idx - 1) + ' stars remaining for error calculations.', "info")
+        Utils.log(str(len(star_list) - idx - 1) + ' stars remain to have their errors rescaled.', "info")

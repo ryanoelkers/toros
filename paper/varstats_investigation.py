@@ -12,189 +12,107 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.stats import sigma_clipped_stats as scs
 from astropy.stats import sigma_clip as sc
+from scipy.stats import median_abs_deviation as mad
 import numpy as np
 import statistics
 
-# read in the star list
-star_list = pd.read_csv(Configuration.ONE_DRIVE + 'master\\' + Configuration.FIELD + '\\' + Configuration.FIELD + '_star_list.txt',
-                        delimiter=' ',
-                        header=0,
-                        low_memory=False)
-star_list['gc_star'] = np.where((star_list['xcen'] > 4300) & (star_list['xcen'] < 9300) &
-                                (star_list['ycen'] > 3600) & (star_list['ycen'] < 8200), 1, 0)
-
-# read in the uncertainties file
-errors = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_errors.txt',
-                         delimiter=' ',
-                         names=['name', 'mag', 'rms', 'erms'],
-                         low_memory=False)
-errors['gc_star'] = star_list['gc_star'].to_numpy()
-errors['var_type'] = star_list['var_type'].to_numpy()
+tv_zpt = 5.4
+xcen_47tuc = 6853
+ycen_47tuc = 5375
+rad_47tuc = 270
 
 # read in the varstats file
-varstats = pd.read_csv(Configuration.ONE_DRIVE + 'varstats\\' + Configuration.FIELD + '_varstats.txt',
-                       delimiter=' ',
-                       header=0,
-                       low_memory=False)
-varstats['gc_star'] = star_list['gc_star'].to_numpy()
-varstats['var_type'] = star_list['var_type'].to_numpy()
-varstats['x'] = star_list['xcen'].to_numpy()
-varstats['y'] = star_list['ycen'].to_numpy()
+varstats = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
+                       sep=' ', low_memory=False)
+varstats['v'] = varstats['master_mag'] - tv_zpt
+varstats['gc_star'] = 0
+dist_47tuc = np.sqrt((varstats['xcen'] - xcen_47tuc) ** 2 + (varstats['ycen'] - ycen_47tuc) ** 2)
+varstats['gc_star'] = np.where(dist_47tuc < rad_47tuc, 1, 0)
 
-nonvars = varstats[(varstats.gc_star == 0) & (varstats.rms < 0.2) &
-                   (varstats.rms > 0) & (varstats.var_type == '--')].copy().reset_index(drop=True)
+# make the 2 sigma cuts on Jstet and Lstet (these are already appropriately scaled)
+mad_jstet = mad(varstats['jstet'])
+mdn_jstet = np.median(varstats['jstet'])
+mad_lstet = mad(varstats['lstet'])
+mdn_lstet = np.median(varstats['lstet'])
 
-# the calculated zeropoints
-zpt_gg = 5.53
-zpt_g = 5.15
-zpt_r = 5.55
-zpt_i = 5.62
+jstet_cut = mdn_jstet + 3 * mad_jstet
+lstet_cut = mdn_lstet + 3 * mad_lstet
 
-# Get the J\\L cutoff
-cnts, binns = np.histogram(nonvars.Jstet.to_numpy() / nonvars.Lstet.to_numpy(),
-                           bins=np.around(np.sqrt(len(nonvars)), decimals=0).astype(int))
+n_pass = len(varstats[(varstats.jstet > jstet_cut) & (varstats.lstet > lstet_cut)])
+Utils.log("The number of stars passing the Welch-Stetson cuts is: " + str(n_pass), "info")
 
-# get the sigma, mean, median from 3 sigma clipping
-comp_mean, comp_median, comp_std = scs(nonvars.Jstet.to_numpy() /
-                                       nonvars.Lstet.to_numpy(),
-                                       sigma=3)
-comp_max = binns[np.argmax(cnts)]
-var_metric_cutoff = comp_max + 2 * comp_std
-
-# plt.figure(figsize=(9, 6))
-# plt.hist(nonvars.Jstet.to_numpy() \\ nonvars.Lstet.to_numpy(),
-#          bins=np.around(np.sqrt(len(nonvars)), decimals=0).astype(int),
-#          histtype='step', color='k', linewidth=3, align='left')
-# plt.plot((np.around(comp_max + 2 * comp_std, decimals=2), np.around(comp_max + 2 * comp_std, decimals=2)),
-#          (0, 17000),
-#          color='r',
-#          linewidth = 3)
-# plt.text(np.around(comp_max + 2 * comp_std, decimals=2) + 0.5, np.max(cnts) * 0.75, r'$\frac{J_S}{L_S} >$' +
-#          str(np.around(comp_max + 2 * comp_std, decimals=2)), fontsize=20)
-# plt.xlabel(r'$\frac{J_S}{L_S}$', fontsize=20)
-# plt.xticks(fontsize=15)
-# plt.ylabel('Count', fontsize=20)
-# plt.xlim([0.74, 14.5])
-# plt.ylim([0, 7000])
-# plt.yticks(fontsize=15)
-# plt.show()
-# plt.close()
-
-# get the periodicity cutoffs
-cols_to_combine = ['p1', 'p2', 'p3', 'p4', 'p5']
-periods = varstats[cols_to_combine].to_numpy().flatten()
-cols_to_combine = ['pwr1', 'pwr2', 'pwr3', 'pwr4', 'pwr5']
-powers = varstats[cols_to_combine].to_numpy().flatten()
-cols_to_combine = ['fap1', 'fap2', 'fap3', 'fap4', 'fap5']
-faps = varstats[cols_to_combine].to_numpy().flatten()
-
-# make a plot showing the aliasing that occurs
-prds, cnts = np.unique(periods, return_counts=True)
-aap = cnts / np.max(cnts)  # normalize by the maximum duplicated period
-
-# plt.figure(figsize=(9, 6))
+# plt.figure(figsize=(18,6))
 #
-# plt.plot(prds, cnts,
-#          color='k', linewidth = 2)
-# plt.xlabel('Period [log(d)]', fontsize=20)
+# plt.subplot(1, 2, 1)
+# plt.hist(varstats['jstet'], bins=30, range=[0,30], histtype='step', color='k')
+# plt.plot([jstet_cut, jstet_cut], [0, 54000], c='r', linewidth=3)
+# plt.text(jstet_cut + .5, 40000,
+#          "J > " + str(np.around(jstet_cut, decimals=2)),
+#          fontsize=15, color="k")
+# plt.xlabel('J', fontsize=20)
 # plt.xticks(fontsize=15)
+# plt.ylim([0,54000])
 # plt.ylabel('Count', fontsize=20)
-# plt.xlim([0.05, 51])
-# plt.xscale('log')
 # plt.yticks(fontsize=15)
-# # plt.show()
-# plt.close()
+#
+# plt.subplot(1, 2, 2)
+# plt.hist(varstats['lstet'], bins=30, range=[0,30], histtype='step', color='k')
+# plt.plot([lstet_cut, lstet_cut], [0, 92500], c='r', linewidth=3)
+# plt.text(lstet_cut + .5, 70000,
+#          "L > " + str(np.around(lstet_cut, decimals=2)),
+#          fontsize=15, color="k")
+# plt.xlabel('L', fontsize=20)
+# plt.xticks(fontsize=15)
+# plt.ylim([0,92500])
+# plt.ylabel('Count', fontsize=20)
+# plt.yticks(fontsize=15)
+#
+# plt.savefig("toros_jl_cutoffs.png", dpi=200, bbox_inches='tight')
+# plt.show()
 
-# now we loop through the variables only selecting the most variable objects and the strongest periods
+v_pass = varstats[(varstats.jstet > jstet_cut) & (varstats.lstet > lstet_cut)].copy().reset_index(drop=True)
+for idx, row in v_pass.iterrows():
+
+    if row.gc_star == 0:
+        if row.chip < 10:
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
+        else:
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
+        print(row.xcen, row.ycen)
+        plt.scatter(lc.jd - 2460580, lc.mag - tv_zpt)
+        # plt.scatter(lc.ph, lc.mag - tv_zpt)
+        plt.xlabel('JD - 2460580')
+        plt.gca().invert_yaxis()
+        plt.show()
+
+# make a cumulative distribution for the simp
+tots = np.zeros(varstats.simp.max())
+vls = np.arange(varstats.simp.max())
+tot = 0
+for idx in np.arange(varstats.simp.max()):
+    tots[idx] = len(varstats[(varstats.simp <= idx) & (varstats.fap1 < 0.01)]) / len(varstats) * 100
+
+plt.scatter(vls, tots)
+plt.show()
 for idx, row in varstats.iterrows():
+    if (row.simp == 0) | (row.simp == 1):
+        if row.chip < 10:
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
+        else:
+            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
 
-    # set the flags to pass the variability of the star
-    var_pass = 0
-    p1_pass = 0
-    p2_pass = 0
-    p3_pass = 0
-    p4_pass = 0
-    p5_pass = 0
-
-    # determine basic variability testing
-    var_metric = row.Jstet / row.Lstet
-
-    lc = pd.read_csv(Configuration.ONE_DRIVE + "lc\\" + Configuration.FIELD + "\\" + row['name'], sep=' ', header=0)
-    ok_data = sc(lc.mag, sigma=3)
-    ok_data.mask[np.argwhere(lc.mag == 0)] = True
-    ok_data.mask[np.argwhere(lc.mag > 25)] = True
-
-    lc = lc[~ok_data.mask].copy().reset_index(drop=True)
-    lc['days'] = lc.jd.to_numpy().astype('int')
-    dys = lc['days'].unique()
-    lc_agg = lc.groupby('days')['mag'].agg({'mean', 'count'}).reset_index()
-    mn, mdn, sg = scs(lc_agg['mean'], sigma=3)
-
-    chi2 = np.abs(lc_agg['mean'].to_numpy() - mn) / sg
-    cntdy = lc_agg['count'].to_numpy()
-    
-    if len(chi2[(chi2 > 3) & (cntdy > 5)] > 0):
-        if (np.argwhere(chi2 > 3)[0] == 1) & (row.mag > 16):
-            plt.figure(figsize=(9,6))
-            plt.errorbar(lc.jd - 2460580, lc.mag, yerr=lc.err, c='k', fmt='none')
-            plt.scatter(lc.jd - 2460580, lc.mag, c='k', marker='.')
-            plt.xlabel('JD - 2460580 [d]', fontsize=20)
-            plt.ylabel(r'$T_G$', fontsize=20)
-            plt.xticks(fontsize=15)
-            plt.yticks(fontsize=15)
-            plt.ylim([16.7, 16.51])
-            cut_lc = lc[lc['days'].isin(dys[chi2 > 3])]
-            plt.errorbar(cut_lc.jd - 2460580, cut_lc.mag, yerr=cut_lc.err, c='r', fmt='none')
-            plt.scatter(cut_lc.jd - 2460580, cut_lc.mag, c='r', marker='.')
-            # plt.arrow(cut_lc.jd.mean() - 2460580, cut_lc.mag.mean() + 2 * sg, 0, sg, color='r', linewidth=2)
-            # plt.gca().invert_yaxis()
-            plt.savefig("aas_flare.png", dpi=200, bbox_inches='tight')
-            plt.show()
-            plt.close()
-
-            plt.figure(figsize=(9,6))
-
-            plt.xlabel('JD - 2460580 [d]', fontsize=20)
-            plt.ylabel(r'$T_G$', fontsize=20)
-            plt.xticks(fontsize=15)
-            plt.yticks(fontsize=15)
-
-            cut_lc = lc[lc['days'].isin(dys[chi2 > 3])]
-            plt.errorbar(cut_lc.jd - 2460580, cut_lc.mag, yerr=cut_lc.err, c='r', fmt='none')
-            plt.scatter(cut_lc.jd - 2460580, cut_lc.mag, c='r')
-            plt.ylim([16.69, 16.56])
-            plt.savefig("aas_flare_zoom.png", dpi=200, bbox_inches='tight')
-            plt.show()
-            plt.close()
-
-
-    # # loop through the various identified periods
-    # if (row.p1 < 51) & (row.fap1 < 0.01):
-    #     n_allies = 1 - len(periods[periods == row.p1]) / np.max(cnts)
-    #     n_powers = 1 - len(powers[(periods == row.p1) & (powers > row.pwr1)]) / len(powers[periods == row.p1])
-    #
-    #     p1_pass = np.around(n_powers * n_allies, decimals=3)
-    #
-    # if (row.p2 < 51) & (row.fap2 < 0.01):
-    #     n_allies = 1 - len(periods[periods == row.p2]) / np.max(cnts)
-    #     n_powers = 1 - len(powers[(periods == row.p2) & (powers > row.pwr2)]) / len(powers[periods == row.p2])
-    #
-    #     p2_pass = np.around(n_powers * n_allies, decimals=3)
-    #
-    # if (row.p3 < 51) & (row.fap3 < 0.01):
-    #     n_allies = 1 - len(periods[periods == row.p3]) / np.max(cnts)
-    #     n_powers = 1 - len(powers[(periods == row.p3) & (powers > row.pwr3)]) / len(powers[periods == row.p3])
-    #
-    #     p3_pass = np.around(n_powers * n_allies, decimals=3)
-    #
-    # if (row.p4 < 51) & (row.fap4 < 0.01):
-    #     n_allies = 1 - len(periods[periods == row.p4]) / np.max(cnts)
-    #     n_powers = 1 - len(powers[(periods == row.p4) & (powers > row.pwr4)]) / len(powers[periods == row.p4])
-    #
-    #     p4_pass = np.around(n_powers * n_allies, decimals=3)
-    #
-    # if (row.p5 < 51) & (row.fap5 < 0.01):
-    #     n_allies = 1 - len(periods[periods == row.p5]) / np.max(cnts)
-    #     n_powers = 1 - len(powers[(periods == row.p5) & (powers > row.pwr5)]) / len(powers[periods == row.p5])
-    #
-    #     p5_pass = np.around(n_powers * n_allies, decimals=3)
+        lc['ph'] = (lc.jd - lc.jd.min()) / row.prd1 % 1
+        # plt.scatter(lc.jd - 2460580, lc.mag - tv_zpt)
+        plt.scatter(lc.ph, lc.mag - tv_zpt)
+        plt.xlabel('ph')
+        plt.gca().invert_yaxis()
+        plt.show()
+print('hold')

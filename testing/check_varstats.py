@@ -27,21 +27,16 @@ vary_list['tmag'] = 0.
 vary_list['rms'] = 0.
 vary_list['min_rms'] = 0.
 vary_list['full_rms'] = 0.
-vary_list['out_mag'] = 0
-vary_list['out_sct'] = 0
-vary_list['jstet'] = 0.
-vary_list['lstet'] = 0.
-vary_list['d90'] = 0.
-vary_list['prd1'] = 0.
-vary_list['pwr1'] = 0.
-vary_list['fap1'] = 0.
-vary_list['prd2'] = 0.
-vary_list['pwr2'] = 0.
-vary_list['fap2'] = 0.
-vary_list['prd3'] = 0.
-vary_list['pwr3'] = 0.
-vary_list['fap3'] = 0.
+vary_list['out_mag'] = -9
+vary_list['out_sct'] = -9
+vary_list['jstet'] = -9.9999
+vary_list['lstet'] = -9.9999
+vary_list['d90'] = -9.9999
+vary_list['prd'] = -9.9999
+vary_list['pwr'] = -9.9999
+vary_list['fap'] = -9.9999
 vary_list['prox'] = 0
+vary_list['cntm'] = 0
 vary_list['edge'] = 0
 vary_list['simp'] = 0
 
@@ -59,9 +54,13 @@ for idx, row in vary_list.iterrows():
 
     # set up the proximity flag if necessary
     dist = np.sqrt((row.x - star_list.x) ** 2 + (row.y - star_list.y) ** 2)
-    prox = len(dist[(dist > 0) & (dist <= 24)])
+    prox = len(dist[(dist > 0) & (dist <= 16)])
     if prox > 0:
         vary_list.loc[idx, 'prox'] = 1
+
+    contam = len(dist[(dist > 0) & (dist <= 24)])
+    if prox > 0:
+        vary_list.loc[idx, 'cntm'] = 1
 
     # edge of the frame (600 < x < 10560) (0 < y < 9700)
     if (row.x < 700) | (row.x > 10460) | (row.y < 100) | (row.y > 9600):
@@ -110,33 +109,27 @@ for idx, row in vary_list.iterrows():
                np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 5))
         vary_list.loc[idx, 'd90'] = np.around(d90, decimals=4)
 
-        # get the top 3 periods with whitening
-        resid = lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy()
-        for idy in range(3):
-            ls = LombScargle(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(),
-                             resid,
-                             dy=lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy())
+        # get the top LS period
+        ls = LombScargle(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(),
+                         lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy(),
+                         dy=lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy())
 
-            # get the power spectrum
-            frequency, power = ls.autopower(minimum_frequency=0.02, maximum_frequency=48)
-            best_freq = frequency[np.argmax(power)]
-            best_power = power[np.argmax(power)]
-            best_period = 1. / best_freq
+        # get the power spectrum
+        frequency, power = ls.autopower(minimum_frequency=0.02, maximum_frequency=48)
+        best_freq = frequency[np.argmax(power)]
+        best_power = power[np.argmax(power)]
+        best_period = 1. / best_freq
 
-            try:
-                fap = ls.false_alarm_probability(best_power, minimum_frequency=0.02, maximum_frequency=48)
-
-                model = ls.model(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(), best_freq)
-
-                vary_list.loc[idx, 'prd' + str(idy + 1)] = best_period
-                vary_list.loc[idx, 'pwr' + str(idy + 1)] = best_power
-                vary_list.loc[idx, 'fap' + str(idy + 1)] = fap
-
-                resid = resid - model
-            except:
-                vary_list.loc[idx, 'prd' + str(idy + 1)] = -9.9999
-                vary_list.loc[idx, 'pwr' + str(idy + 1)] = -9.9999
-                vary_list.loc[idx, 'fap' + str(idy + 1)] = -9.9999
+        # get the FAP
+        try:
+            fap = ls.false_alarm_probability(best_power, minimum_frequency=0.02, maximum_frequency=48)
+            vary_list.loc[idx, 'prd'] = best_period
+            vary_list.loc[idx, 'pwr'] = best_power
+            vary_list.loc[idx, 'fap'] = fap
+        except:
+            vary_list.loc[idx, 'prd'] = -9.9999
+            vary_list.loc[idx, 'pwr'] = -9.9999
+            vary_list.loc[idx, 'fap'] = -9.9999
 
         # get J & L stet
         wk = 1.0  # Weighting Factor
@@ -177,12 +170,15 @@ for idx, row in vary_list.iterrows():
         lstet = jstet * kstet / 0.7908
         vary_list.loc[idx, 'jstet'] = np.around(jstet, decimals=4)
         vary_list.loc[idx, 'lstet'] = np.around(lstet, decimals=4)
+
     if idx % 1000 == 0:
-        Utils.log('Varstats calculated for ' + str(idx + 1) + ' stars. ' + str(len(star_list) - idx - 1) + ' stars remain.',
+        Utils.log('Varstats calculated for ' + str(idx + 1) + ' stars. ' +
+                  str(len(star_list) - idx - 1) + ' stars remain.',
                   'info')
 
 for idx, row in vary_list.iterrows():
-    vary_list.loc[idx, 'simp'] = len(vary_list[(vary_list.prd1 == row.prd1) & (vary_list.pwr1 > row.pwr1)])
+    vary_list.loc[idx, 'simp'] = (len(vary_list[(vary_list.prd == row.prd) & (vary_list.pwr > row.pwr)]) /
+                                  len(vary_list[(vary_list.prd == row.prd)]))
 
 vary_list.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
