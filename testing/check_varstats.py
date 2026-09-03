@@ -14,6 +14,14 @@ from astropy.stats import sigma_clip as sc
 from astropy.timeseries import LombScargle
 import warnings
 warnings.simplefilter('error', RuntimeWarning)
+from astropy.stats import sigma_clipped_stats
+
+def clipped_median(x, sigma=3):
+    mean, median, std = sigma_clipped_stats(x, sigma=sigma)
+    return median
+def clipped_std(x, sigma=3):
+    mean, median, std = sigma_clipped_stats(x, sigma=sigma)
+    return std
 
 # remove stars near 47 Tuc and the small cluster
 star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
@@ -23,7 +31,7 @@ star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '
 vary_list = star_list.copy().reset_index(drop=True)
 
 # add new columns to star list
-vary_list['tmag'] = 0.
+vary_list['mag'] = 0.
 vary_list['rms'] = 0.
 vary_list['min_rms'] = 0.
 vary_list['full_rms'] = 0.
@@ -39,6 +47,7 @@ vary_list['prox'] = 0
 vary_list['cntm'] = 0
 vary_list['edge'] = 0
 vary_list['simp'] = 0
+vary_list['pnts'] = 0
 
 for idx, row in vary_list.iterrows():
 
@@ -66,9 +75,13 @@ for idx, row in vary_list.iterrows():
     if (row.x < 700) | (row.x > 10460) | (row.y < 100) | (row.y > 9600):
         vary_list.loc[idx, 'edge'] = 1
 
+    npts = len(lc[lc.mag < 0].mag) / len(lc)
+    if npts > 0.1:
+        vary_list.loc[idx, 'pnts'] = 1
+
     # get the rms values
     tmag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
-    vary_list.loc[idx, 'tmag'] = np.around(tmag, decimals=4)  # get the TOROS magnitude
+    vary_list.loc[idx, 'mag'] = np.around(tmag, decimals=4)  # get the TOROS magnitude
     vary_list.loc[idx, 'full_rms'] = np.around(full_rms, decimals=4)  # get the rms of the full light curve
 
     # determine if any days have a magnitude way higher or lower than normal
@@ -90,18 +103,20 @@ for idx, row in vary_list.iterrows():
     # get the number of observations per day
     num_obs = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'count'}).to_numpy().flatten()
 
+    clipd_std = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys')['mag'].agg(clipped_std)
+
     try:
         min_rms = np.around(np.min(rms_vals[num_obs >= 6]), decimals=4)
         vary_list.loc[idx, 'min_rms'] = min_rms  # get the minimum rms of the data
 
-        daily_rms = np.mean(rms_vals[num_obs >= 6])
-        vary_list.loc[idx, 'rms'] = np.around(daily_rms, decimals=4)  # get the typical "daily" rms of the data
+        clip_rms = np.median(clipd_std[num_obs >= 6])
+        vary_list.loc[idx, 'rms'] = np.around(clip_rms, decimals=4)  # get the typical "daily" rms of the data
     except:
         min_rms = np.around(-9.9999, decimals=4)
         vary_list.loc[idx, 'min_rms'] = min_rms  # get the minimum rms of the data
 
-        daily_rms = np.around(-9.9999, decimals=4)
-        vary_list.loc[idx, 'rms'] = daily_rms  # get the typical "daily" rms of the data
+        clip_rms = np.around(-9.9999, decimals=4)
+        vary_list.loc[idx, 'rms'] = np.around(clip_rms, decimals=4)  # get the typical "daily" rms of the data
 
     if (len(lc[(lc.mag > 0) & (lc.err > 0)]) > 10) & (min_rms > 0):
         mean_rms, rms, std_rms = scs(rms_vals[~np.isnan(rms_vals)], sigma=2.5)
@@ -182,3 +197,8 @@ for idx, row in vary_list.iterrows():
 
 vary_list.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
+errors = vary_list[['source_id', 'mag', 'rms', 'min_rms', 'full_rms']].copy().reset_index(drop=True)
+errors = errors.rename(columns={'source_id': 'name'})
+
+errors[errors.rms > 0].to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
+                              sep=' ', header=True, index=False)

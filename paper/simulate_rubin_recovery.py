@@ -36,7 +36,7 @@ fail_vars = varstats[(varstats.jstet <= jstet_cut) &
 
 # how many stars do you want to test and how many simulations do you want to run?
 nstars = 1000
-n_sims = 100
+n_sims = 5
 # select the random stars for selection
 samp_vars = pass_vars.sample(n=nstars, random_state=1987, replace=False).reset_index(drop=True)
 samp_cnst = fail_vars.sample(n=nstars, random_state=1987, replace=False).reset_index(drop=True)
@@ -93,39 +93,42 @@ for idx, row in samp_cnst.iterrows():
         Utils.log(str(int(idx)) + " constant light curves read. Working on next 100.", "info")
 
 # now we need to sample selections
-time_idxs = np.arange(47)
+time_idxs = np.arange(253)
 rng = np.random.default_rng(1987)
 
-num_pass = np.zeros((47, n_sims))
-baseline = np.zeros((47, n_sims))
-for jdx in np.arange(3, 47):
+num_pass = np.zeros((253, n_sims))
+baseline = np.zeros((253, n_sims))
 
-    # the number of simulated selections
-    for idx in np.arange(n_sims):
+min_obs=3
+for jdx in np.arange(min_obs, 253):
+    fill_idx = jdx - min_obs
+    if jdx % 10 == 0:
+        # the number of simulated selections
+        for idx in np.arange(n_sims):
 
-        # pull the time selections
-        times = rng.choice(time_idxs, size=jdx, replace=False)
-        times = np.sort(times)  # make sure they are sorted for the Stetson caluclations
+            # pull the time selections
+            times = rng.choice(time_idxs, size=jdx, replace=False)
+            times = np.sort(times)  # make sure they are sorted for the Stetson caluclations
 
-        j_v = np.zeros(nstars)
-        l_v = np.zeros(nstars)
-        j_c = np.zeros(nstars)
-        l_c = np.zeros(nstars)
+            j_v = np.zeros(nstars)
+            l_v = np.zeros(nstars)
+            j_c = np.zeros(nstars)
+            l_c = np.zeros(nstars)
 
-        for kdx in np.arange(nstars):
-            j_v[kdx], _, l_v[kdx] = Varstats.stetson_metrics(vars_mags[kdx, times], vars_errs[kdx, times])
-            j_c[kdx], _, l_c[kdx] = Varstats.stetson_metrics(cnst_mags[kdx, times], cnst_errs[kdx, times])
+            for kdx in np.arange(nstars):
+                j_v[kdx], _, l_v[kdx] = Varstats.stetson_metrics(vars_mags[kdx, times], vars_errs[kdx, times])
+                j_c[kdx], _, l_c[kdx] = Varstats.stetson_metrics(cnst_mags[kdx, times], cnst_errs[kdx, times])
 
-        # make the 3 sigma cuts on Jstet and Lstet (these are already appropriately scaled)
-        mad_j_sim = mad(j_c)
-        mdn_j_sim = np.median(j_c)
-        mad_l_sim = mad(l_c)
-        mdn_l_sim = np.median(l_c)
+            # make the 3 sigma cuts on Jstet and Lstet (these are already appropriately scaled)
+            mad_j_sim = mad(j_c)
+            mdn_j_sim = np.median(j_c)
+            mad_l_sim = mad(l_c)
+            mdn_l_sim = np.median(l_c)
 
-        j_cut_sim = mdn_j_sim + 3 * mad_j_sim
-        l_cut_sim = mdn_l_sim + 3 * mad_l_sim
+            j_cut_sim = mdn_j_sim + 3 * mad_j_sim
+            l_cut_sim = mdn_l_sim + 3 * mad_l_sim
 
-        num_pass[jdx-3, idx] = np.around(len(j_v[(j_v > j_cut_sim) & (l_v > l_cut_sim)]) / nstars, decimals=2)
-        baseline[jdx-3, idx] = np.around(np.max(jd[times]) - np.min(jd[times]), decimals=6)
+            num_pass[fill_idx, idx] = np.around(len(j_v[(j_v > j_cut_sim) & (l_v > l_cut_sim)]) / nstars, decimals=2)
+            baseline[fill_idx, idx] = np.around(np.max(jd[times]) - np.min(jd[times]), decimals=6)
     Utils.log("Samples with " + str(jdx) + " lc points finished.", "info")
 print('hold')
