@@ -15,28 +15,25 @@ from astropy.stats import sigma_clip as sc
 import numpy as np
 import statistics
 
+data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
+
 # read in the star list to convert to Vmag
-star_list = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
+full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt",
                         sep=' ', low_memory=False)
-star_list['bmp'] = star_list['phot_bp_mean_mag'] - star_list['phot_rp_mean_mag']
-# star_list['v'] = (star_list['phot_g_mean_mag']  + 0.02704 -
-#                  0.01424 * star_list['bmp'] +
-#                  0.2156 * star_list['bmp'] ** 2 -
-#                  0.01426 * star_list['bmp'] ** 3)
-star_list['v'] = (star_list['phot_g_mean_mag']
+full_list['bmp'] = full_list['phot_bp_mean_mag'] - full_list['phot_rp_mean_mag']
+full_list['v'] = (full_list['phot_g_mean_mag']
                   + 0.01760
-                  + 0.006860 * star_list['bmp']
-                  + 0.1732 * star_list['bmp'] ** 2)
+                  + 0.006860 * full_list['bmp']
+                  + 0.1732 * full_list['bmp'] ** 2)
 
-#plt.scatter(star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['master_mag'],
-#            star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['master_mag'] -
-#            star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['v'],
-#            marker='.', c='k', alpha=0.1)
 
+# only use non-LSST sources
+star_list = full_list[(full_list.source_id != full_list.lsst_id)].copy().reset_index(drop=True)
+
+# get the zeropoint using non-variables
 _, tv_zpt, tv_zpt_std = scs(star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['master_mag'] -
                             star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['v'], sigma=2.5)
-#plt.plot([14,24], [tv_zpt, tv_zpt], c='r')
-#plt.show()
+
 plt.figure(figsize=(9,6))
 
 plt.hist(star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['master_mag'] -
@@ -52,11 +49,11 @@ plt.xlim([2, 7])
 plt.ylabel('Count', fontsize=20)
 plt.yticks(fontsize=15)
 plt.savefig("toros_t2v_offset.png", dpi=200, bbox_inches='tight')
-# plt.show()
+plt.show()
 plt.close()
 
 # read in the uncertainties file
-errors = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + '_errors.txt',
+errors = pd.read_csv(data_dir + Configuration.FIELD + '_errors.txt',
                      delimiter=' ',
                      low_memory=False)
 
@@ -89,4 +86,27 @@ plt.yscale('log')
 plt.legend(loc="upper left", fontsize=15)
 plt.savefig("toros_yy_precision.png", dpi=200, bbox_inches='tight')
 plt.show()
+plt.close()
 
+
+mgs_lsst = errors[full_list.source_id == full_list.lsst_id].mag.to_numpy() - tv_zpt
+rms_lsst = errors[full_list.source_id == full_list.lsst_id].rms.to_numpy()
+
+# plot for uncertainties
+plt.figure(figsize=(9,6))
+plt.scatter(mgs_lsst, rms_lsst, marker='.', c='k', alpha=0.1)
+
+plt.plot(mgs, pht_lim, c='r', linewidth=3, label='Photon Noise')
+plt.plot(mgs, pht_sky_lim, c='orange', linewidth=3, label='Photon & Sky Noise')
+
+plt.xlabel(r'$V_{TR}$', fontsize=20)
+plt.xticks(fontsize=15)
+plt.xlim([8, 20.2])
+plt.ylabel('rms', fontsize=20)
+plt.yticks(fontsize=15)
+plt.ylim([0.001, 10])
+plt.yscale('log')
+plt.legend(loc="upper left", fontsize=15)
+plt.savefig("toros_yy_precision_lsst.png", dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
