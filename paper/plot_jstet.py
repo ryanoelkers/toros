@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib
 import logging
+import matplotlib.colors as colors
 from libraries.utils import Utils
 matplotlib.set_loglevel(level = 'warning')
 matplotlib.use("TkAgg")
@@ -11,9 +12,62 @@ from config import Configuration
 from astropy.stats import sigma_clipped_stats as scs
 import numpy as np
 from scipy.stats import median_abs_deviation as mad
+from sklearn.cluster import DBSCAN
 
+data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
 
-data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
+# data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
+varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
+
+# get the daily stetson cutoff
+mad_jstet = mad(varstats['jstet'], nan_policy='omit')
+mdn_jstet = np.nanmedian(varstats['jstet'])
+mad_lstet = mad(varstats['lstet'], nan_policy='omit')
+mdn_lstet = np.nanmedian(varstats['lstet'])
+
+jstet_cut = mdn_jstet + 3 * mad_jstet
+lstet_cut = mdn_lstet + 3 * mad_lstet
+
+vars_pass = varstats[(varstats['jstet'] > jstet_cut) &
+                     (varstats['lstet'] > lstet_cut) &
+                     (varstats['object_type']!= 'LSST')].reset_index(drop=True)
+
+vars_pass['stet_ratio'] = vars_pass.jstet.to_numpy()/vars_pass.lstet.to_numpy()
+
+plt.scatter(vars_pass[vars_pass.stet_ratio < 5].xcen, vars_pass[vars_pass.stet_ratio < 5].ycen,
+            c=vars_pass[vars_pass.stet_ratio < 5].d90, norm=colors.LogNorm())
+plt.colorbar()
+plt.show()
+var_points = np.column_stack([vars_pass['xcen'].to_numpy(), vars_pass['ycen'].to_numpy(), vars_pass['stet_ratio']])
+var_points = np.vstack(var_points)
+
+db = DBSCAN(eps=400, min_samples=35)
+labels = db.fit_predict(var_points)
+
+# Label -1 means "noise" (not in any cluster)
+n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+n_noise = np.sum(labels == -1)
+print(f"Clusters found: {n_clusters}")
+print(f"Noise points: {n_noise}")
+
+# --- Plot ---
+plt.figure(figsize=(7, 7))
+unique_labels = set(labels)
+colors = plt.cm.tab10(np.linspace(0, 1, max(len(unique_labels), 1)))
+
+for lbl, color in zip(unique_labels, colors):
+    mask = labels == lbl
+    if lbl == -1:
+        # Noise points shown in black/gray
+        plt.scatter(var_points[mask, 0], var_points[mask, 1], c='gray', marker='x', s=40, label='Noise')
+    else:
+        plt.scatter(var_points[mask, 0], var_points[mask, 1], c=[color], s=40, label=f'Cluster {lbl}')
+
+plt.title("DBSCAN Clustering (unknown # of clusters, with noise)")
+plt.gca().invert_yaxis()
+plt.legend()
+plt.show()
+
 
 full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
 dys = np.array([2460584, 2460586, 2460599, 2460600, 2460601, 2460614, 2460617,
