@@ -15,7 +15,7 @@ from astropy.stats import sigma_clip as sc
 import numpy as np
 import statistics
 
-data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
+data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
 
 # read in the star list to convert to Vmag
 full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt",
@@ -49,7 +49,7 @@ plt.xlim([2, 7])
 plt.ylabel('Count', fontsize=20)
 plt.yticks(fontsize=15)
 plt.savefig("toros_t2v_offset.png", dpi=200, bbox_inches='tight')
-plt.show()
+# plt.show()
 plt.close()
 
 # read in the uncertainties file
@@ -73,8 +73,8 @@ pht_sky_lim = errors['shotnsky'].to_numpy()
 plt.figure(figsize=(9,6))
 plt.scatter(mgs, rms, marker='.', c='k', alpha=0.1)
 
-plt.plot(mgs, pht_lim, c='r', linewidth=3, label='Photon Noise')
-plt.plot(mgs, pht_sky_lim, c='orange', linewidth=3, label='Photon & Sky Noise')
+plt.plot(mgs[np.argsort(mgs)], pht_lim[np.argsort(mgs)], c='r', linewidth=3, label='Photon Noise')
+plt.plot(mgs[np.argsort(mgs)], pht_sky_lim[np.argsort(mgs)], c='orange', linewidth=3, label='Photon & Sky Noise')
 
 plt.xlabel(r'$V_{TR}$', fontsize=20)
 plt.xticks(fontsize=15)
@@ -85,28 +85,5 @@ plt.ylim([0.001, 10])
 plt.yscale('log')
 plt.legend(loc="upper left", fontsize=15)
 plt.savefig("toros_yy_precision.png", dpi=200, bbox_inches='tight')
-plt.show()
-plt.close()
-
-
-mgs_lsst = errors[full_list.source_id == full_list.lsst_id].mag.to_numpy() - tv_zpt
-rms_lsst = errors[full_list.source_id == full_list.lsst_id].rms.to_numpy()
-
-# plot for uncertainties
-plt.figure(figsize=(9,6))
-plt.scatter(mgs_lsst, rms_lsst, marker='.', c='k', alpha=0.1)
-
-plt.plot(mgs, pht_lim, c='r', linewidth=3, label='Photon Noise')
-plt.plot(mgs, pht_sky_lim, c='orange', linewidth=3, label='Photon & Sky Noise')
-
-plt.xlabel(r'$V_{TR}$', fontsize=20)
-plt.xticks(fontsize=15)
-plt.xlim([8, 20.2])
-plt.ylabel('rms', fontsize=20)
-plt.yticks(fontsize=15)
-plt.ylim([0.001, 10])
-plt.yscale('log')
-plt.legend(loc="upper left", fontsize=15)
-plt.savefig("toros_yy_precision_lsst.png", dpi=200, bbox_inches='tight')
 plt.show()
 plt.close()

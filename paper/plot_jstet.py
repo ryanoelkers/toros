@@ -13,7 +13,7 @@ import numpy as np
 from scipy.stats import median_abs_deviation as mad
 
 
-data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
+data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
 
 full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
 dys = np.array([2460584, 2460586, 2460599, 2460600, 2460601, 2460614, 2460617,
@@ -49,10 +49,10 @@ for idx, dy in enumerate(dys):
                          (stetson_daily['object_type'] == 'LSST')].mag.to_numpy() - 5.4
     rms = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
                          (stetson_daily[str(dy) + '_l'] > lstet_cut) &
-                         (stetson_daily['object_type'] == 'LSST')].rms.to_numpy()
+                         (stetson_daily['object_type'] == 'LSST')].d90.to_numpy()
 
     total_rms = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
-                              (stetson_daily[str(dy) + '_l'] > lstet_cut)].rms.to_numpy()
+                              (stetson_daily[str(dy) + '_l'] > lstet_cut)].d90.to_numpy()
 
     c_rms[0, idx] = np.around(len(rms[rms < 0.01]) / len(total_rms[total_rms < 0.01]) * 100, decimals=2)
     c_rms[1, idx] = np.around(len(rms[(rms >= 0.01) & (rms <= 0.1)]) /

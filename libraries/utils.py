@@ -40,7 +40,7 @@ class Utils:
         # create the logger
         logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s",
                             filename=Configuration.LOG_DIRECTORY + "toros.log",
-                            filemode='a')
+                            filemode='w')
         logger = logging.getLogger()
 
         if not getattr(logger, 'handler_set', None):

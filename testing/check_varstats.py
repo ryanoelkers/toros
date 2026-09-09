@@ -15,6 +15,7 @@ from astropy.timeseries import LombScargle
 import warnings
 warnings.simplefilter('error', RuntimeWarning)
 from astropy.stats import sigma_clipped_stats
+from libraries.varstats import Varstats
 
 def clipped_median(x, sigma=3):
     mean, median, std = sigma_clipped_stats(x, sigma=sigma)
@@ -35,8 +36,9 @@ vary_list['mag'] = 0.
 vary_list['rms'] = 0.
 vary_list['min_rms'] = 0.
 vary_list['full_rms'] = 0.
-vary_list['out_mag'] = -9
-vary_list['out_sct'] = -9
+vary_list['out_mag_nsct'] = 0
+vary_list['out_sct_nmag'] = 0
+vary_list['out_mag_sct'] = 0
 vary_list['jstet'] = -9.9999
 vary_list['lstet'] = -9.9999
 vary_list['d90'] = -9.9999
@@ -85,32 +87,47 @@ for idx, row in vary_list.iterrows():
     vary_list.loc[idx, 'full_rms'] = np.around(full_rms, decimals=4)  # get the rms of the full light curve
 
     # determine if any days have a magnitude way higher or lower than normal
-    mmag_vals = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'mean'}).to_numpy().flatten()
+    agg_lc = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg(mean_mag=('mag', clipped_median),
+                                                                std_mag=('mag', clipped_std),
+                                                                mag05=('mag', ('q05', lambda x: x.quantile(0.05))),
+                                                                mag95=('mag', ('q95', lambda x: x.quantile(0.95))),
+                                                                total_obs=('mag', 'count'))
     try:
-        clip_mag = sc(mmag_vals - np.mean(mmag_vals))
-        vary_list.loc[idx, 'out_mag'] = len(clip_mag.data[clip_mag.mask])
+        # get the index of the clipped mean magnitudes
+        clip_mag = sc(agg_lc[agg_lc.total_obs >= 6].mean_mag.to_numpy() - agg_lc[agg_lc.total_obs >= 6].mean_mag.mean(),
+                      sigma=3.0,
+                      masked=True)
+        clip_mag_mask = clip_mag.mask
+
+        # get the index of the clipp std magnitudes
+        clip_std = sc(agg_lc[agg_lc.total_obs >= 6].std_mag.to_numpy() - agg_lc[agg_lc.total_obs >= 6].std_mag.mean(),
+                      sigma=3.0,
+                      masked=True)
+        clip_std_mask = clip_std.mask
+
+        # they are both out of bounds
+        vary_list.loc[idx, 'out_mag_std'] = len(np.argwhere(clip_mag.mask & clip_std.mask).flatten())
+
+        # only mag is out of bounds
+        vary_list.loc[idx, 'out_mag_nstd'] = len(np.argwhere((clip_mag.mask == True) & (clip_std.mask == False)).flatten())
+
+        # only std is out of bounds
+        vary_list.loc[idx, 'out_std_nmag'] = len(np.argwhere((clip_mag.mask == False) & (clip_std.mask == True)).flatten())
     except:
-        vary_list.loc[idx, 'out_mag'] = -1
-
-    # determine if any days have large scatter
-    rms_vals = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'std'}).to_numpy().flatten()
-    try:
-        clip_std = sc(rms_vals[rms_vals > 0] - np.nanmean(rms_vals[rms_vals > 0]))
-        vary_list.loc[idx, 'out_sct'] = len(clip_std.data[clip_std.mask])
-    except:
-        vary_list.loc[idx, 'out_sct'] = -1
-
-    # get the number of observations per day
-    num_obs = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'count'}).to_numpy().flatten()
-
-    clipd_std = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys')['mag'].agg(clipped_std)
+        vary_list.loc[idx, 'out_mag_std'] = -1
+        vary_list.loc[idx, 'out_std_nmag'] = -1
+        vary_list.loc[idx, 'out_mag_nstd'] = -1
 
     try:
-        min_rms = np.around(np.min(rms_vals[num_obs >= 6]), decimals=4)
+        min_rms = np.around(agg_lc[agg_lc.total_obs >=6].std_mag.min(), decimals=4)
         vary_list.loc[idx, 'min_rms'] = min_rms  # get the minimum rms of the data
 
-        clip_rms = np.median(clipd_std[num_obs >= 6])
+        clip_rms = np.median(agg_lc[agg_lc.total_obs >=6].std_mag.median())
         vary_list.loc[idx, 'rms'] = np.around(clip_rms, decimals=4)  # get the typical "daily" rms of the data
+
+        d90 = np.median(agg_lc[agg_lc.total_obs >=6].mag95 - agg_lc[agg_lc.total_obs >=6].mag05)
+        vary_list.loc[idx, 'd90'] = np.around(d90, decimals=4)
+
     except:
         min_rms = np.around(-9.9999, decimals=4)
         vary_list.loc[idx, 'min_rms'] = min_rms  # get the minimum rms of the data
@@ -119,10 +136,6 @@ for idx, row in vary_list.iterrows():
         vary_list.loc[idx, 'rms'] = np.around(clip_rms, decimals=4)  # get the typical "daily" rms of the data
 
     if (len(lc[(lc.mag > 0) & (lc.err > 0)]) > 10) & (min_rms > 0):
-        mean_rms, rms, std_rms = scs(rms_vals[~np.isnan(rms_vals)], sigma=2.5)
-        d90 = (np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 95) -
-               np.percentile(lc[(lc.mag > 0) & (lc.err > 0)].mag, 5))
-        vary_list.loc[idx, 'd90'] = np.around(d90, decimals=4)
 
         # get the top LS period
         ls = LombScargle(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy(),
@@ -146,45 +159,16 @@ for idx, row in vary_list.iterrows():
             vary_list.loc[idx, 'pwr'] = -9.9999
             vary_list.loc[idx, 'fap'] = -9.9999
 
-        # get J & L stet
-        wk = 1.0  # Weighting Factor
+        try:
+            # calculate the stetson metrics
+            jstet, _, lstet = Varstats.stetson_metrics(lc[(lc.mag > 0) & (lc.err > 0)].mag,
+                                                       lc[(lc.mag > 0) & (lc.err > 0)].err)
 
-        mg = lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy()
-        MeanMag = np.mean(mg)
-        er = lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy()
-        nms = len(lc[(lc.mag > 0) & (lc.err > 0)].jd.to_numpy())
-
-        Jt = np.zeros(nms)
-        Jb = np.zeros(nms)
-        Kt = np.zeros(nms)
-        Kb = np.zeros(nms)
-
-        for i in range(0, nms-2, 2):
-
-            Sigi = (mg[i] - MeanMag) / (er[i]) * (np.sqrt(nms / (nms - 1)))
-            Sigj = (mg[i + 1] - MeanMag) / (er[i + 1]) * (np.sqrt(nms / (nms - 1)))
-
-            Pk = Sigi * Sigj  # pg 853 Stetson 1996 Eq 2 Kinemuchi
-            if Pk > 0.0:
-                sgnPk = 1.0
-            if Pk == 0.0:
-                sgnPk = 0.0
-            if Pk < 0.0:
-                sgnPk = -1.0
-
-            Jt[i] = wk * sgnPk * (np.sqrt(abs(Pk)))  # Kinemuchi eq.1 (Numerator)
-            Jb[i] = wk  # Kinemuchi eq.1 (Denominator)
-            Kt[i] = np.abs(Sigi)  # Kinemuchi eq.5 (Numerator)
-            Kb[i] = np.abs(Sigi ** (2.0))  # Kinemuchi eq.5 (Denominator)
-
-        jstet = np.sum(Jt) / np.sum(Jb)  # Eq 1
-        if np.sum(Kb) != 0:
-            kstet = ((1.0 / nms) * np.sum(Kt)) / (np.sqrt((1.0 / nms) * np.sum(Kb)))  # Eq 5
-        else:
-            kstet = 0.
-        lstet = jstet * kstet / 0.7908
-        vary_list.loc[idx, 'jstet'] = np.around(jstet, decimals=4)
-        vary_list.loc[idx, 'lstet'] = np.around(lstet, decimals=4)
+            vary_list.loc[idx, 'jstet'] = np.around(jstet, decimals=4)
+            vary_list.loc[idx, 'lstet'] = np.around(lstet, decimals=4)
+        except:
+            vary_list.loc[idx, 'jstet'] = -9.9999
+            vary_list.loc[idx, 'lstet'] = -9.9999
 
     if idx % 1000 == 0:
         Utils.log('Varstats calculated for ' + str(idx + 1) + ' stars. ' +
@@ -200,5 +184,5 @@ vary_list.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD 
 errors = vary_list[['source_id', 'mag', 'rms', 'min_rms', 'full_rms']].copy().reset_index(drop=True)
 errors = errors.rename(columns={'source_id': 'name'})
 
-errors[errors.rms > 0].to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
-                              sep=' ', header=True, index=False)
+errors.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
+              sep=' ', header=True, index=False)
