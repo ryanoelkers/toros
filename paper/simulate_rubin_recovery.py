@@ -40,7 +40,7 @@ f_dy = open("stetson_metrics_daily.txt", "w")
 f_dys = open("stetson_metrics_cumulative.txt", "w")
 
 # set up the header file
-header = "name mag d90 object_type"
+header = "name mag rms d90 object_type"
 for dy in dys:
     header = header + " " + str(int(dy)) + "_j"
     header = header + " " + str(int(dy)) + "_l"
@@ -64,8 +64,8 @@ for idx, row in varstats.iterrows():
                          sep=" ")
 
     # set up the line for the star
-    line_dy = str(row.source_id) + " " + str(row.mag) + " " + str(row.d90) + " " + str(row.object_type)
-    line_dys = str(row.source_id) + " " + str(row.mag) + " " + str(row.d90) + " " + str(row.object_type)
+    line_dy = str(row.source_id) + " " + str(row.mag) + " " + str(row.rms) + " " + str(row.d90) + " " + str(row.object_type)
+    line_dys = str(row.source_id) + " " + str(row.mag) + " " + str(row.rms) + " " + str(row.d90) + " " + str(row.object_type)
 
     # calculate the j/l per day and cumulative
     for dy in dys:
