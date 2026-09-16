@@ -20,8 +20,8 @@ xcen_47tuc = 6853
 ycen_47tuc = 5375
 rad_47tuc = 270
 
-data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
-lc_dir = "/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001/rescale/"
+data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/"
+lc_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/"
 # read in the varstats file
 varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
 varstats['v'] = varstats['master_mag'] - tv_zpt  # correct the V magnitude
@@ -84,25 +84,6 @@ pass_vars = varstats[(varstats.jstet > jstet_cut) &
                       (varstats.lstet > lstet_cut) &
                       (varstats.source_id != varstats.lsst_id)].copy().reset_index(drop=True)
 
-for idx, row in pass_vars.iterrows():
-
-    if idx % 10 == 0:
-        if row.gc_star == 1:
-            if row.chip < 10:
-                lc = pd.read_csv(lc_dir + '/0' + str(row.chip) + '/' +
-                                 Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                                 sep=" ")
-            else:
-                lc = pd.read_csv(lc_dir + '/' + str(row.chip) + '/' +
-                                 Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                                 sep=" ")
-
-            plt.errorbar(lc[lc.mag> 0].jd, lc[lc.mag> 0].mag, yerr=lc[lc.mag > 0].err, c='k', fmt='none')
-            plt.scatter(lc[lc.mag> 0].jd, lc[lc.mag> 0].mag, c='k')
-            plt.gca().invert_yaxis()
-            print(row.chip, row.source_id)
-            plt.show()
-
 varstats.loc[(varstats.jstet > jstet_cut) & (varstats.lstet > lstet_cut) & (varstats.source_id != varstats.lsst_id), 'var_ok'] = 1
 
 plt.figure(figsize=(9,6))
@@ -135,7 +116,7 @@ labels[labels == -1] = 0
 varstats.loc[pass_pers.index, 'GRPS'] = labels
 pass_pers.loc[pass_pers.index, 'GRPS'] = labels
 
-varstats.loc[(varstats.simp < 0.01) & (varstats.fap < 0.001) &
+varstats.loc[(varstats.simp < 0.1) & (varstats.fap < 0.001) &
                      (varstats.source_id != varstats.lsst_id) & (varstats.GRPS == 0), 'per_ok'] = 1
 
 
@@ -159,6 +140,29 @@ plt.close()
 # update the groups flag
 pass_pers = pass_pers[pass_pers.GRPS == 0].copy().reset_index(drop=True)
 n_per_pass = len(pass_pers)
+
+for idx, row in pass_pers.iterrows():
+
+    if row.var_period > 0:
+
+        if row.chip < 10:
+            lc = pd.read_csv(lc_dir + '/0' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
+        else:
+            lc = pd.read_csv(lc_dir + '/' + str(row.chip) + '/' +
+                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
+                             sep=" ")
+
+        lc['ph'] = ((lc.jd - lc.jd.min()) / row.prd) % 1
+
+        plt.errorbar(lc[lc.mag> 0].ph, lc[lc.mag> 0].mag, yerr=lc[lc.mag > 0].err, c='k', fmt='none')
+        plt.scatter(lc[lc.mag> 0].ph, lc[lc.mag> 0].mag, c='k')
+        plt.gca().invert_yaxis()
+
+        print(row.chip, row.source_id, row.var_period, np.around(row.prd, decimals=6),
+              len(varstats[varstats.prd == row.prd]), len(varstats[(varstats.prd == row.prd) & (varstats.fap > 0.001)]))
+        plt.show()
 
 Utils.log("The number of stars passing the period cuts is: " + str(n_per_pass), "info")
 
