@@ -11,6 +11,7 @@ from astropy.stats import sigma_clipped_stats as scs
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+from sklearn.feature_selection import r_regression
 
 def clipped_std(x, sigma=3):
     mean, median, std = scs(x, sigma=sigma)
@@ -18,19 +19,21 @@ def clipped_std(x, sigma=3):
 
 ntr_stars = 500
 lc_sze = 253
-tot_stars = 30000
+tot_stars = 60000
 
 # the directories where the light curves reside
-lc_dir = "/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001/raw/"
-rs_dir = "/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001/rescale/"
+lc_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/raw/"
+rs_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/"
 dirold = "/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001_hold/"
 
 # read in the star list
-star_list = pd.read_csv("/Volumes/OUMUAMUA/toros/commissioning/master/FIELD_0e.001/"
+star_list = pd.read_csv("/Users/yuw816/Data/toros/commissioning/master/FIELD_0e.001/"
                         + Configuration.FIELD + '_star_list.txt',
                         delimiter=' ',
                         header=0,
                         low_memory=False)
+
+star_list = star_list[star_list.source_id != star_list.lsst_id].copy().reset_index(drop=True)
 
 # determine the 47Tuc distance
 xcen_47tuc = 6853
@@ -40,7 +43,7 @@ rad_47tuc = 1000
 star_list['47T_dist'] = np.sqrt((star_list.xcen - xcen_47tuc) ** 2 +
                                 (star_list.ycen - ycen_47tuc) ** 2)
 
-f = open("/Volumes/OUMUAMUA/toros/commissioning/lc/FIELD_0e.001/error_chk.txt", "w")
+f = open("/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/error_chk.txt", "w")
 f.write("name mag mean_rms min_rms full_rms mean_cmp min_cmp full_cmp\n")
 for idx, row in star_list[:tot_stars].iterrows():
 
@@ -81,9 +84,9 @@ for idx, row in star_list[:tot_stars].iterrows():
 
             # read in the light curves
             try:
-                if row.chip < 10:
+                if trow.chip < 10:
                     tr = pd.read_csv(lc_dir + "0" + str(trow.chip) + "/FIELD_0e.001_" +
-                                         str(row.source_id) + ".lc",
+                                         str(trow.source_id) + ".lc",
                                          sep=" ")
                 else:
                     tr = pd.read_csv(lc_dir + str(trow.chip) + "/FIELD_0e.001_" +
@@ -92,21 +95,26 @@ for idx, row in star_list[:tot_stars].iterrows():
 
                 # update the matrix values
                 lc_hold[:, idy] = tr.mag.to_numpy() - tr[tr.mag > 0].mag.median()
-
+                if len(tr[tr.mag < 0].mag) > 0:
+                    lc_hold[tr.mag.to_numpy() < 0, idy] = -9.9999
             except:
-                lc_hold[:, idy] = np.zeros(lc_sze) - 9.999
+                lc_hold[:, idy] = np.zeros(lc_sze) - 9.9999
 
+        # correlations
         cln_lc = np.zeros(lc_sze)
         raw = lc.mag.to_numpy()
 
-        for iii in np.arange(lc_sze):
-            if raw[iii] > 0:
-                valys = lc_hold[iii,:]
-                _, off, _ = scs(valys[valys > -10], sigma=2)
+        corrs = r_regression(lc_hold, raw)
+        pass_corrs_idx = np.argwhere(corrs > 0.8).flatten()
+        pass_corrs = len(corrs[corrs > 0.8])
 
-                cln_lc[iii] = raw[iii] - off
-            else:
-                cln_lc[iii] = -9.999
+        if pass_corrs > 0:
+            lc_hold = lc_hold[:, pass_corrs_idx]
+
+        _, off, _ = scs(lc_hold, axis=1, sigma=2.5, mask_value=-9.9999)
+
+        cln_lc = raw - off
+        cln_lc[raw < 0] = -9.9999
 
         lc['dys'] = lc.jd.astype(int)
         lc['mag'] = cln_lc
@@ -124,6 +132,15 @@ for idx, row in star_list[:tot_stars].iterrows():
         min_cmp = agg_cmp[agg_cmp.total_obs >= 6].std_mag.min()
         _, _, full_cmp = scs(lc_cmp[lc_cmp.mag > 0].mag, sigma=2.5)
 
+        # ph = (lc.jd - lc.jd.min()) / row.var_period % 1
+        # plt.scatter(lc.jd, lc.mag, c='k')
+        # plt.scatter(lc_cmp.jd, lc_cmp.mag, c='b')
+        # plt.show()
+        # print(mean_mag, mean_std, mean_cmp)
+
+        if mean_mag > 20:
+            print(idx)
+
         line = (str(row.source_id) + " " +
                 str(np.around(mean_mag, decimals=4)) + " " +
                 str(np.around(mean_std, decimals=4)) + " " +
@@ -133,7 +150,8 @@ for idx, row in star_list[:tot_stars].iterrows():
                 str(np.around(min_cmp, decimals=4)) + " " +
                 str(np.around(full_cmp, decimals=4)) + "\n")
         f.write(line)
-        Utils.log(str(tot_stars - idx - 1) + " stars remain.", "info")
+        if idx % 100 == 0:
+            Utils.log(str(tot_stars - idx - 1) + " stars remain.", "info")
     except:
         continue
 f.close()
