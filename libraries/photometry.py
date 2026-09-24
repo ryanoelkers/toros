@@ -15,6 +15,7 @@ matplotlib.set_loglevel(level = 'warning')
 matplotlib.use("TkAgg")
 pil_logger = logging.getLogger('PIL')
 pil_logger.setLevel(logging.INFO)
+from sklearn.feature_selection import r_regression
 import matplotlib.pyplot as plt
 from astropy.wcs import WCS
 import astropy.units as u
@@ -23,176 +24,150 @@ from astropy.stats import sigma_clipped_stats as scs
 class Photometry:
 
     @staticmethod
-    def remove_systematics(star_list, trend_stars=500):
+    def clipped_std(mag, sigma=3):
+        """ This function can be useful in a aggregated state in pandas, only the std is returned.
+
+        :parameter mag - A numpy array of magnitudes
+        :parameter sigma - Outlier clipping level
+
+        :return std - The clipped Standard Deviation is returned.
+        """
+        mean, median, std = scs(mag, sigma=sigma)
+        return std
+
+    @staticmethod
+    def remove_systematics(star_list, trend_stars=500, corr_level=0.8):
         """ This function will use a combination of image statistics and ensemble light curves to remove common
         systematics from each light curve.
 
         :parameter star_list - The data frame with the original star list
         :parameter trend_stars - The number of stars you want to use for the detrending search, default 500
+        :parameter corr_level - The level of pearson correlation a star needs to be considered as a detrender
 
         :return nothing is returned, but the files are written with a new magnitude column
         """
 
-        # first get the zeropoint determination from the flux measurements
-        flux_files, flux_dates = Utils.get_all_files_per_field(Configuration.FLUX_DIRECTORY,
-                                                     Configuration.FIELD,
-                                                     'flux',
-                                                     '.flux')
+        # add whether the star is in the globular cluster (helps to remove poor systematics)
+        star_list['47T_dist'] = np.sqrt((star_list.xcen - Configuration.XCEN_47TUC) ** 2 +
+                                        (star_list.ycen - Configuration.YCEN_47TUC) ** 2)
 
-        #set up the zpt holder
-        zpt_offset = np.zeros(len(flux_files))
-        jd_offset = np.zeros(len(flux_files))
-        Utils.log("Pulling zeropoint offset from flux files...", "info")
-        for fidx, ffile in enumerate(flux_files):
-            flux_df = pd.read_csv(ffile, nrows=1, header=0)
-            zpt_offset[fidx] = flux_df['zpt'].values
-            jd_offset[fidx] = flux_df['jd'].values
+        # add whether the star came from TOROS or LSST
+        star_list['cat_source'] = 'toros'
+        star_list.loc[star_list.source_id == star_list.lsst_id, 'cat_source'] = 'lsst'
 
-            if fidx % 50 == 0:
-                Utils.log("..." + str(int(np.around(fidx / len(flux_files) * 100, decimals=0))) + "% complete.",
-                          "info")
+        # open the errors file for writing
+        f = open(Configuration.LIGHTCURVE_STATS_DIRECTORY + Configuration.FIELD + "_errors.txt", "w")
+        f.write("name mag rms min_rms full_rms x y n_corr TUC47 cat_source chip object_type\n")
 
-        # sort to the correct time
-        time_srt = np.argsort(jd_offset)
-        zpt_offset = zpt_offset[time_srt]
+        # now let's loop through every star
+        for idx, row in star_list.iterrows():
 
-        # open the error file for writing
-        f = open(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt", "w")
-        header = 'name mag rms erms orms x y chip object_type\n'
-        f.write(header)
+            # update the star list to get the trend stars
+            star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
+            star_list['dist'] = np.sqrt((star_list.y - row.ycen) ** 2 + (star_list.x - row.xcen) ** 2)
 
-        for idx, row in star_list.tail(6000).iterrows():
-            if idx % 1000 == 0:
-                Utils.log("Working to detrend the next 1000 light curves. " +
-                          str(len(star_list) - idx - 1) + " light curves remain.", "info")
+            # get the trend stars based on the proximity to 47 Tuc
+            if row['47T_dist'] > Configuration.RAD_47TUC:
+                # if the star is far enough away from 47 TUC
+                trend_list = star_list[(star_list.dist > 2 * Configuration.APER_SIZE) &
+                                       (star_list['47T_dist'] > Configuration.RAD_47TUC) &
+                                       (star_list.cat_source == 'toros')].copy().sort_values(
+                    by=['dmag']).reset_index(drop=True)
+                tuc47 = 0
+            else:
+                # if the star is in 47 Tuc, then let's use those stars too, but not only those stars
+                trend_list = star_list[(star_list.dist > 2 * Configuration.APER_SIZE) &
+                                       (star_list.cat_source == 'toros')].copy().sort_values(
+                    by=['dmag']).reset_index(drop=True)
+                tuc47 = 1
 
-            # read in the light curve
+            # cut off the trend star list based on the number of stars to used for the trend
+            trend_list = trend_list[:trend_stars].copy().reset_index(drop=True)
+
+            # read in the target star, remembering to search in the chip directory
             if row.chip < 10:
                 lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
-                                 '0'+ str(row.chip) + '/' + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                                 sep=' ')
+                                 "0" + str(row.chip) +
+                                 "/FIELD_0e.001_" + str(row.source_id) + ".lc",
+                                 sep=" ")
             else:
                 lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
-                                 str(row.chip) + '/' + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                                 sep=' ')
+                                 str(row.chip) +
+                                 "/FIELD_0e.001_" + str(row.source_id) + ".lc",
+                                 sep=" ")
 
-            # determine the offset in magnitude and distance from the target star
-            star_list['dmag'] = np.abs(row.master_mag - star_list['master_mag'])
-            star_list['dist'] = np.sqrt((star_list.y - row.y) ** 2 + (star_list.x - row.x) ** 2)
+            # the numpy array holder for the trend stars
+            lc_hold = np.zeros([len(lc), trend_stars])
 
-            # grab the list of trends stars based on whether or not the star is in 47-Tuc
-            if row.gc_star == 0:
-                trend_list = star_list[(star_list.gc_star == 0) &
-                                       (star_list.dist > Configuration.APER_SIZE) &
-                                       (star_list.object_type == 'Star')].copy().sort_values(by='dmag')[0:trend_stars].reset_index(drop=True)
-            else:
-                trend_list = star_list[(star_list.gc_star == 1) &
-                                       (star_list.dist > Configuration.APER_SIZE) &
-                                       (star_list.object_type == 'Star')].copy().sort_values(by='dmag')[0:trend_stars].reset_index(drop=True)
+            # iterate through each trend star, reading it in
+            for idy, trow in trend_list.iterrows():
 
-            # set up the empty collection vectors
-            cols = {}
-            col_nme = []
-            mgs = np.zeros(len(trend_list))
-
-            kk = 0  # initialize the star names
-            for idy, rw in trend_list.iterrows():
                 # read in the trend light curves
-                if rw.chip < 10:
+                if trow.chip < 10:
                     tr = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
-                                     '0' + str(rw.chip) + '/' + Configuration.FIELD + '_' + str(rw.source_id) + '.lc',
-                                     sep=' ')
+                                     "0" + str(trow.chip) +
+                                     "/FIELD_0e.001_" + str(trow.source_id) + ".lc",
+                                     sep=" ")
                 else:
                     tr = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RAW_DIRECTORY +
-                                     str(rw.chip) + '/' + Configuration.FIELD + '_' + str(rw.source_id) + '.lc',
-                                     sep=' ')
+                                     str(trow.chip) +
+                                     "/FIELD_0e.001_" + str(trow.source_id) + ".lc",
+                                     sep=" ")
 
-                # only accept the star for detrending if it has non-zero values
-                if len(tr[tr.mag > 0]) > 0:
-                    # subtract the median value from the light curve
-                    cols['mag_' + str(kk)] = tr.mag.to_numpy() - tr[tr.mag > 0].mag.median()
-                    # grab the value you subtracted for safe keeping
-                    mgs[idy] = tr[tr.mag > 0].mag.median()
-                    # append the column name list to make the data frame
-                    col_nme.append('mag_' + str(kk))
-                    # update kk
-                    kk = kk + 1
-                del tr
-            del trend_list
+                # update the matrix values
+                lc_hold[:, idy] = tr.mag.to_numpy() - tr[tr.mag > 0].mag.median()
 
-            # make the trend_df
-            trend_df = pd.DataFrame(cols, columns=col_nme)
+                # if there were any "bad" data points, replace them with -9.999 os the code doesn't get confused
+                if len(tr[tr.mag < 0].mag) > 0:
+                    lc_hold[tr.mag.to_numpy() < 0, idy] = -9.9999
 
-            # set up the trend vector
-            lc['trd'] = np.zeros(len(lc))
-            lc['zpt'] = zpt_offset
+            del tr, trend_list
 
-            # loop through each day finding the appropriate offset
-            for ii in range(len(lc)):
-                # get the offset for the specific day
-                offsets = trend_df.loc[ii].to_numpy()
-
-                # initialize the holding lists
-                mg = []
-                off = []
-
-                # get the offset list in X.X mag chunks to interpolate around outliers
-                for jj in np.arange(np.min(mgs), np.max(mgs), 0.1):
-                    # ignore any empty space
-                    if len(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)]) > 0:
-                        # get the current magnitude bin
-                        mg.append(jj + 0.05)
-                        # get the median offset with 2.5 sigma clipping
-                        _, mg_mdn, _ = scs(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)], sigma=2.5)
-                        # the value shouldn't be nan, but if it is, then just use the median of the whole day
-                        if np.isnan(mg_mdn):
-                            off.append(np.median(offsets[(mgs >= jj) & (mgs < jj + 0.1) & (offsets > -20)]))
-                        else:
-                            off.append(mg_mdn)
-                try:
-                    # get the trend value for this observations
-                    trd = np.interp(lc.mag[ii], mg, off)
-
-                    # if it is nan, then just use the median for the full day
-                    if np.isnan(trd):
-                        lc.loc[ii, 'trd'] = np.nanmedian(off)
-                    else:
-                        lc.loc[ii, 'trd'] = trd
-                except:
-                    lc.loc[ii, 'trd'] = -9.9999
-            del trend_df
-
+            # rename the magnitude column to be "raw"
             lc = lc.rename(columns={'mag': 'raw'})
-            lc['mag'] = lc['raw'] - lc['trd']
+            raw = lc.raw.to_numpy()  # dump the column for the regression analysis
 
-            # rearrange the light curve information for better outputs
-            lc = lc[['jd', 'mag', 'err', 'raw', 'trd', 'zpt', 'sky', 'bkg', 'x', 'y', 'nstars', 'airmass']]
+            # Determine the number of correlations to use
+            corrs = r_regression(lc_hold, raw)
+            pass_corrs_idx = np.argwhere(corrs > corr_level).flatten()  # index with the correlated stars
+            pass_corrs = len(corrs[corrs > corr_level])  # the number of stars with > corr_level correlations
 
-            # update bad data
-            lc.raw = np.where(lc.raw < 0, -9.9999, lc.raw)
-            lc.mag = np.where(lc.raw < 0, -9.9999, lc.mag)
+            # if at least 1 highly correlated star exists, then use it for the detrending
+            if pass_corrs > 0:
+                lc_hold = lc_hold[:, pass_corrs_idx]
 
-            # calculate statistics for the error analysis
-            mag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
-            lc['dys'] = lc.jd.to_numpy().astype('int')
+            # determine the trend through a median 2.5 sigma clipping process, excluding bad data points
+            _, off, _ = scs(lc_hold, axis=1, sigma=2.5, mask_value=-9.9999)
+            lc['trd'] = off
+            del lc_hold
 
-            rms_vals = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'std'}).to_numpy().flatten()
-            num_obs = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'count'}).to_numpy().flatten()
+            # remove the trend from the light curve
+            lc['mag'] = raw - off
+            lc.loc[lc.raw < 0, 'mag'] = -9.9999  # replace bad points
 
-            erms = lc[(lc.mag > 0) & (lc.err > 0)].err.mean()
-            try:
-                rms = np.median(rms_vals[num_obs >= 6])
-            except:
-                rms = full_rms
+            # now calculate the errors
+            lc['dys'] = lc.jd.astype(int)
+
+            # aggregate the light curve on a daily level and get the number of observaitons per day and clipped std
+            agg_lc = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg(std_mag=('mag', Photometry.clipped_std),
+                                                                        total_obs=('mag', 'count'))
+            # get the median rms, minimum rms on the daily level and the full light curve rms
+            med_rms = agg_lc[agg_lc.total_obs >= 6].std_mag.median()  # median rms
+            min_rms = agg_lc[agg_lc.total_obs >= 6].std_mag.min()  # minimum rms
+            _, med_mag, full_rms = scs(lc[lc.mag > 0].mag, sigma=2.5)  # full light curve rms
+            del agg_lc
 
             # output the statistics
             line = (Configuration.FIELD + "_" + str(row.source_id) + ".lc" + " " +
-                    str(np.around(row.master_mag, decimals=4)) + " " +
-                    str(np.around(rms, decimals=4)) + " " +
-                    str(np.around(erms, decimals=4)) + " " +
+                    str(np.around(med_mag, decimals=4)) + " " +
+                    str(np.around(med_rms, decimals=4)) + " " +
+                    str(np.around(min_rms, decimals=4)) + " " +
                     str(np.around(full_rms, decimals=4)) + " " +
                     str(np.around(row.xcen, decimals=2)) + " " +
                     str(np.around(row.ycen, decimals=2)) + " " +
+                    str(int(pass_corrs)) + " " +
+                    str(int(tuc47)) + " " +
+                    str(row.cat_source) + " " +
                     str(int(row.chip)) + " " +
                     str(row.object_type) + "\n")
             f.write(line)
@@ -200,26 +175,46 @@ class Photometry:
             lc = lc.drop(columns=['dys'])
 
             # update print formats
+            lc.jd = lc.jd.map(lambda x: '%0.6f' % x)
             lc.mag = lc.mag.map(lambda x: '%0.4f' % x)
             lc.raw = lc.raw.map(lambda x: '%0.4f' % x)
             lc.err = lc.err.map(lambda x: '%0.4f' % x)
             lc.trd = lc.trd.map(lambda x: '%0.4f' % x)
-            lc.zpt = lc.zpt.map(lambda x: '%0.4f' % x)
             lc.x = lc.x.map(lambda x: '%d' % x)
             lc.y = lc.y.map(lambda x: '%d' % x)
-            lc.nstars = lc.nstars.map(lambda x: '%d' % x)
-            lc.airmass = lc.airmass.map(lambda x: '%0.3f' % x)
 
-            # write out lc
-            if row.chip < 10:
-                lc.to_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) +
-                          '/' + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                          sep=" ", header=True, index=False)
+            # write out lc to different directories depending on the data source
+            if row.cat_source == 'toros':
+                if row.chip < 10:
+                    lc[['jd', 'mag', 'err', 'raw', 'trd', 'x', 'y']].to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                              "star_list/detrend/" +
+                              "0" + str(row.chip) + "/" +
+                              Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                              sep=" ", header=True, index=False)
+                else:
+                    lc[['jd', 'mag', 'err', 'raw', 'trd', 'x', 'y']].to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                              "star_list/detrend/" +
+                              str(row.chip) + "/" +
+                              Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                              sep=" ", header=True, index=False)
             else:
-                lc.to_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) +
-                          '/' + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                          sep=" ", header=True, index=False)
+                if row.chip < 10:
+                    lc[['jd', 'mag', 'err', 'raw', 'trd', 'x', 'y']].to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                              "lsst/detrend/" +
+                              "0" + str(row.chip) + "/" +
+                              Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                              sep=" ", header=True, index=False)
+                else:
+                    lc[['jd', 'mag', 'err', 'raw', 'trd', 'x', 'y']].to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                              "lsst/detrend/" +
+                              str(row.chip) + "/" +
+                              Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                              sep=" ", header=True, index=False)
             del lc
+
+            if idx % 1000 == 0:
+                Utils.log("Systematics removed from " + str(idx) + " stars. " +
+                          str(len(star_list) - idx - 1) + " stars remain.", "info")
 
         # now close the file
         f.close()

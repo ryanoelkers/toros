@@ -10,12 +10,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from config import Configuration
 
-data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
+data_dir = Configuration.LIGHTCURVE_STATS_DIRECTORY
 
 # read in the uncertainties file
-errors_cmp = pd.read_csv(data_dir + Configuration.FIELD + '_errors.txt', delimiter=' ', low_memory=False)
-
-errors = pd.read_csv("/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/error_chk.txt",
+# errors_cmp = pd.read_csv(data_dir + Configuration.FIELD + '_errors.txt', delimiter=' ', low_memory=False)
+errors_cmp = pd.read_csv("/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/error_chk_wrk.txt",
+                     delimiter=' ', low_memory=False)
+errors = pd.read_csv("/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/error_chk.txt",
                      delimiter=' ', low_memory=False)
 
 sky_bkg = 60.
@@ -31,7 +32,7 @@ pht_lim = errors['shot'].to_numpy()
 pht_sky_lim = errors['shotnsky'].to_numpy()
 
 plt.scatter(errors.mag - 5.4, errors.mean_rms, c='k', marker='.', alpha=0.1)
-plt.scatter(errors_cmp.mag - 5.4, errors_cmp.rms, c='r', marker='.', alpha=0.1)
+plt.scatter(errors_cmp.mag - 5.4, errors_cmp.mean_rms, c='r', marker='.', alpha=0.1)
 plt.plot(mgs[np.argsort(mgs)], pht_lim[np.argsort(mgs)], c='r', linewidth=3, label='Photon Noise')
 plt.plot(mgs[np.argsort(mgs)], pht_sky_lim[np.argsort(mgs)], c='orange', linewidth=3, label='Photon & Sky Noise')
 plt.yscale('log')
