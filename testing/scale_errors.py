@@ -11,62 +11,63 @@ from libraries.utils import Utils
 import numpy as np
 import pandas as pd
 from astropy.stats import sigma_clipped_stats as scs
+from libraries.photometry import Photometry
 
 # remove stars near 47 Tuc and the small cluster
 star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + "_star_list.txt",
                         sep=' ', low_memory=False, index_col=0)
+star_list['cat_source'] = 'toros'
+star_list.loc[star_list.source_id == star_list.lsst_id, 'cat_source'] = 'lsst'
 
-# redo the uncertainties?
-reydo = 'N'
-
-if reydo == 'Y':
-    f = open(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt", 'w')
-    header = 'name mag rms erms full_rms x y chip object_type\n'
-    f.write(header)
+errors = pd.read_csv("/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/FIELD_0e.001_errors.txt",
+                     delimiter=' ', low_memory=False)
+re_chk = 'N'
+if re_chk == 'Y':
+    f = open(Configuration.LIGHTCURVE_STATS_DIRECTORY + Configuration.FIELD + "_scale_errors.txt", "w")
+    f.write('name mag rms erms\n')
 
     for idx, row in star_list.iterrows():
 
-        if row.chip < 10:
-            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) + '/' +
-                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                             sep=" ")
-        else:
-            lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) + '/' +
-                             Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                             sep=" ")
+        if row.cat_source == 'toros':
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/detrend/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/detrend/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
 
-        # calculate statistics for the error analysis
-        mag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
-        lc['dys'] = lc.jd.to_numpy().astype('int')
+            # now calculate the errors
+            lc['dys'] = lc.jd.astype(int)
 
-        rms_vals = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'std'}).to_numpy().flatten()
-        num_obs = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg({'mag': 'count'}).to_numpy().flatten()
+            # aggregate the light curve on a daily level and get the number of observations per day and clipped std
+            agg_lc = lc[(lc.mag > 0) & (lc.err > 0)].groupby('dys').agg(med_mag=('mag', 'median'),
+                                                                        std_mag=('mag', Photometry.clipped_std),
+                                                                        std_err=('err', Photometry.clipped_median),
+                                                                        total_obs=('mag', 'count'))
+            # get the median rms, minimum rms on the daily level and the full light curve rms
+            med_rms = agg_lc[agg_lc.total_obs >= 6].std_mag.median()
+            med_erms = agg_lc[agg_lc.total_obs >= 6].std_err.median()
+            med_mag = agg_lc[agg_lc.total_obs >= 6].med_mag.median()
 
-        erms = lc[(lc.mag > 0) & (lc.err > 0)].err.mean()
-        try:
-            rms = np.median(rms_vals[num_obs >= 6])
-        except:
-            rms = full_rms
-        del lc
+            line = (Configuration.FIELD + "_" + str(row.source_id) + ".lc" + " " +
+                    str(np.around(med_mag, decimals=4)) + " " +
+                    str(np.around(med_rms, decimals=4)) + " " +
+                    str(np.around(med_erms, decimals=4)) + "\n")
+            f.write(line)
 
-        # output the statistics
-        line = (Configuration.FIELD + "_" + str(row.source_id) + ".lc" + " " +
-                str(np.around(row.master_mag, decimals=4)) + " " +
-                str(np.around(rms, decimals=4)) + " " +
-                str(np.around(erms, decimals=4)) + " " +
-                str(np.around(full_rms, decimals=4)) + " " +
-                str(np.around(row.xcen, decimals=2)) + " " +
-                str(np.around(row.ycen, decimals=2)) + " " +
-                str(int(row.chip)) + " " +
-                str(row.object_type) + "\n")
-        f.write(line)
-
+            del agg_lc, lc
         if idx % 1000 == 0:
-            Utils.log(str(len(star_list) - idx - 1) + ' stars remaining for error calculations.', "info")
+            Utils.log("Getting scale values for the next 1000 stars. " + str(len(star_list) - idx - 1) + " stars remain.", "info")
     f.close()
 
 # read in the error file
-errs = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
+errs = pd.read_csv(Configuration.LIGHTCURVE_STATS_DIRECTORY + Configuration.FIELD + "_scale_errors.txt",
                    sep=" ", low_memory=False)
 
 # determine the scaling factor based on magnitude
@@ -87,34 +88,107 @@ for ii in np.arange(int(np.floor(mn_mag)), int(np.ceil(mx_mag)), stp_sze):
         ers.append(err_clp)
 
 # re-scale photometric errors to make the rms-level magnitude
-e_rms = np.interp(errs.mag, mgs, ers)
-scl_rms = e_rms / errs.erms
+e_rms = np.interp(errors.mag, mgs, ers)
+# errs.loc[errs.erms == 0, 'erms'] = 0.0001
+# scl_rms = e_rms / errs.erms
 
 # re-scale the errors
 for idx, row in star_list.iterrows():
 
-    if row.chip < 10:
-        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/0' + str(row.chip) + '/' +
-                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                         sep=" ")
+    if row.cat_source == 'toros':
+        try:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/detrend/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/detrend/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+        except:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/detrend/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/detrend/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
     else:
-        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DETREND_DIRECTORY + '/' + str(row.chip) + '/' +
-                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                         sep=" ")
-
+        try:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/detrend/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/detrend/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+        except:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/detrend/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/detrend/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+    lc['dys'] = lc.jd.astype(int)
     lc.rename(columns={'err': 'err_nscl'}, inplace=True)
+    agg_lc = lc[(lc.mag > 0) & (lc.err_nscl > 0)].groupby('dys').agg(std_err=('err_nscl', Photometry.clipped_median),
+                                                                     total_obs=('mag', 'count'))
 
-    lc['err'] = np.around(lc['err_nscl'] * scl_rms[idx], decimals=4)
+    # get the median rms, minimum rms on the daily level and the full light curve rms
+    med_erms = agg_lc[agg_lc.total_obs >= 6].std_err.median()
 
-    lc = lc[['jd', 'mag', 'err', 'raw', 'err_nscl', 'trd', 'sky', 'bkg', 'x', 'y', 'nstars', 'airmass']]
+    scl_rms = e_rms[idx] / med_erms
+    lc['err'] = np.around(lc['err_nscl'] * scl_rms, decimals=4)
 
-    if row.chip < 10:
-        lc.to_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + "0" + str(row.chip) + '/' +
-                  Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                  sep=' ', index=False)
+    lc = lc[['jd', 'mag', 'err', 'raw', 'err_nscl', 'trd', 'x', 'y']]
+
+    if row.cat_source == 'toros':
+        if row.chip < 10:
+            lc.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                      "star_list/fin/" +
+                      "0" + str(row.chip) + "/" +
+                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                      sep=" ", header=True, index=False)
+        else:
+            lc.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                      "star_list/fin/" +
+                      str(row.chip) + "/" +
+                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                      sep=" ", header=True, index=False)
     else:
-        lc.to_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + str(row.chip) + '/'
-                  + Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                  sep=' ', index=False)
+        if row.chip < 10:
+            lc.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                      "lsst/fin/" +
+                      "0" + str(row.chip) + "/" +
+                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                      sep=" ", header=True, index=False)
+        else:
+            lc.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                      "lsst/fin/" +
+                      str(row.chip) + "/" +
+                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                      sep=" ", header=True, index=False)
+    del lc
+
     if idx % 1000 == 0:
         Utils.log(str(len(star_list) - idx - 1) + ' stars remain to have their errors rescaled.', "info")

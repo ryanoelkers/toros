@@ -20,6 +20,7 @@ from libraries.varstats import Varstats
 def clipped_median(x, sigma=3):
     mean, median, std = sigma_clipped_stats(x, sigma=sigma)
     return median
+
 def clipped_std(x, sigma=3):
     mean, median, std = sigma_clipped_stats(x, sigma=sigma)
     return std
@@ -30,6 +31,8 @@ star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '
                         header=0,
                         low_memory=False)
 vary_list = star_list.copy().reset_index(drop=True)
+vary_list['cat_source'] = 'toros'
+vary_list.loc[vary_list.source_id == vary_list.lsst_id, 'cat_source'] = 'lsst'
 
 # add new columns to star list
 vary_list['mag'] = 0.
@@ -53,14 +56,61 @@ vary_list['pnts'] = 0
 
 for idx, row in vary_list.iterrows():
 
-    if row.chip < 10:
-        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/0' + str(row.chip) + '/' +
-                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                         sep=" ")
+    if row.cat_source == 'toros':
+        try:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+        except:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
     else:
-        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/' + str(row.chip) + '/' +
-                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                         sep=" ")
+        try:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+        except:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+
     lc['dys'] = lc.jd.to_numpy().astype('int')
 
     # set up the proximity flag if necessary
@@ -181,8 +231,8 @@ for idx, row in vary_list.iterrows():
 
 vary_list.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
-errors = vary_list[['source_id', 'mag', 'rms', 'min_rms', 'full_rms']].copy().reset_index(drop=True)
-errors = errors.rename(columns={'source_id': 'name'})
+# errors = vary_list[['source_id', 'mag', 'rms', 'min_rms', 'full_rms']].copy().reset_index(drop=True)
+# errors = errors.rename(columns={'source_id': 'name'})
 
-errors.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
-              sep=' ', header=True, index=False)
+# errors.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_errors.txt",
+#               sep=' ', header=True, index=False)

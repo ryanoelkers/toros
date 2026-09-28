@@ -24,16 +24,28 @@ from astropy.stats import sigma_clipped_stats as scs
 class Photometry:
 
     @staticmethod
-    def clipped_std(mag, sigma=3):
+    def clipped_std(xx, sigma=3):
         """ This function can be useful in a aggregated state in pandas, only the std is returned.
 
-        :parameter mag - A numpy array of magnitudes
+        :parameter xx - A numpy array
         :parameter sigma - Outlier clipping level
 
         :return std - The clipped Standard Deviation is returned.
         """
-        mean, median, std = scs(mag, sigma=sigma)
+        mean, median, std = scs(xx, sigma=sigma)
         return std
+
+    @staticmethod
+    def clipped_median(xx, sigma=3):
+        """ This function can be useful in a aggregated state in pandas, only the std is returned.
+
+        :parameter xx - A numpy array
+        :parameter sigma - Outlier clipping level
+
+        :return std - The clipped median is returned.
+        """
+        mean, median, std = scs(xx, sigma=sigma)
+        return median
 
     @staticmethod
     def remove_systematics(star_list, trend_stars=500, corr_level=0.8):
