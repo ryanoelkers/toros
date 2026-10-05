@@ -18,7 +18,26 @@ data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
 # data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
 varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
 
-# get the daily stetson cutoff
+lsststats = varstats[varstats.source_id == varstats.lsst_id].copy().reset_index(drop=True)
+lsststats['source_id'] = lsststats['source_id'].astype(int)
+
+# get the known LSST variables
+known = pd.read_csv(Configuration.DATA_DIRECTORY + "/lsst/lsst_data_47tuc_variables.csv",
+                    delimiter=',',
+                    header=0,
+                    low_memory=False,
+                    index_col=0)
+known_g = known[known.band == 'g'].groupby('diaObjectId').agg({'coord_ra': 'mean', 'coord_dec': 'mean', 'psfFlux': 'mean'}).reset_index()
+known_r = known[known.band == 'r'].groupby('diaObjectId').agg({'coord_ra': 'mean', 'coord_dec': 'mean', 'psfFlux': 'mean'}).reset_index()
+known_i = known[known.band == 'i'].groupby('diaObjectId').agg({'coord_ra': 'mean', 'coord_dec': 'mean', 'psfFlux': 'mean'}).reset_index()
+known_y = known[known.band == 'y'].groupby('diaObjectId').agg({'coord_ra': 'mean', 'coord_dec': 'mean', 'psfFlux': 'mean'}).reset_index()
+
+known_g['g'] = -2.5 * np.log10(known_g.psfFlux) + 31.4
+known_r['r'] = -2.5 * np.log10(known_r.psfFlux) + 31.4
+known_i['i'] = -2.5 * np.log10(known_i.psfFlux) + 31.4
+known_y['y'] = -2.5 * np.log10(known_y.psfFlux) + 31.4
+
+# get the full cutoffs
 jstet_results = Varstats.stetson_j_peak_and_cutoff(varstats[(varstats.source_id != varstats.lsst_id)].jstet,
                                                    sigma_method="mirror_std", n_sigma=3.0)
 jstet_cut = jstet_results['cutoff']
@@ -27,7 +46,13 @@ lstet_results = Varstats.stetson_j_peak_and_cutoff(varstats[(varstats.source_id 
                                                    sigma_method="mirror_std", n_sigma=3.0)
 lstet_cut = lstet_results['cutoff']
 
-full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
+n_var_pass_lsst_total = len(lsststats[(lsststats.jstet > jstet_cut) & (lsststats.lstet > lstet_cut)])
+
+Utils.log("The number of LSST stars that pass the cuts with the full lc are: " + str(n_var_pass_lsst_total),
+          "info")
+Utils.log("As a percentage that is: " + str(np.around(n_var_pass_lsst_total / len(lsststats) * 100, decimals=2)) + "%",
+          "info")
+
 dys = np.array([2460584, 2460586, 2460599, 2460600, 2460601, 2460614, 2460617,
                 2460619, 2460620, 2460621, 2460622, 2460623, 2460626, 2460635])
 
@@ -39,82 +64,77 @@ c_rms = np.zeros((3, len(dys)))
 per_pass_lsst = np.zeros(len(dys))
 per_pass_other = np.zeros(len(dys))
 
+mag_pass = []
+amp_pass = []
+id_pass = []
+
 for idx, dy in enumerate(dys):
 
-    # get the daily stetson cutoff
-    mad_jstet = mad(stetson_daily[str(dy) + '_j'], nan_policy='omit')
-    mdn_jstet = np.nanmedian(stetson_daily[str(dy) + '_j'])
-    mad_lstet = mad(stetson_daily[str(dy) + '_l'], nan_policy='omit')
-    mdn_lstet = np.nanmedian(stetson_daily[str(dy) + '_l'])
+    try:
+        jstet_results = Varstats.stetson_j_peak_and_cutoff(stetson_daily[stetson_daily.cat_source =='toros'][str(dy) + '_j'],
+                                                           sigma_method="mirror_std", n_sigma=3.0)
+        jstet_cut = jstet_results['cutoff']
 
-    jstet_cut = mdn_jstet + 3 * mad_jstet
-    lstet_cut = mdn_lstet + 3 * mad_lstet
+        lstet_results = Varstats.stetson_j_peak_and_cutoff(stetson_daily[stetson_daily.cat_source =='toros'][str(dy) + '_l'],
+                                                           sigma_method="mirror_std", n_sigma=3.0)
+        lstet_cut = lstet_results['cutoff']
 
-    n_pass_lsst = len(stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
-                                    (stetson_daily[str(dy) + '_l'] > lstet_cut) &
-                                    (stetson_daily['object_type'] == 'LSST')])
+        n_pass_lsst = len(stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
+                                        (stetson_daily[str(dy) + '_l'] > lstet_cut) &
+                                        (stetson_daily['object_type'] == 'LSST')])
 
-    per_pass_lsst[idx] = np.around((n_pass_lsst / len(stetson_daily[stetson_daily['object_type'] == 'LSST'])) * 100, decimals=2)
 
-    mags = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
-                         (stetson_daily[str(dy) + '_l'] > lstet_cut) &
-                         (stetson_daily['object_type'] == 'LSST')].mag.to_numpy() - 5.4
-    rms = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
-                         (stetson_daily[str(dy) + '_l'] > lstet_cut) &
-                         (stetson_daily['object_type'] == 'LSST')].d90.to_numpy()
+        mags = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
+                             (stetson_daily[str(dy) + '_l'] > lstet_cut) &
+                             (stetson_daily['object_type'] == 'LSST')].mag.to_numpy() - 5.4
 
-    total_rms = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
-                              (stetson_daily[str(dy) + '_l'] > lstet_cut)].d90.to_numpy()
+        mag_pass.extend(mags)
 
-    c_rms[0, idx] = np.around(len(rms[rms < 0.01]) / len(total_rms[total_rms < 0.01]) * 100, decimals=2)
-    c_rms[1, idx] = np.around(len(rms[(rms >= 0.01) & (rms <= 0.1)]) /
-                              len(total_rms[(total_rms >= 0.01) & (total_rms <= 0.1)]) * 100, decimals=2)
-    c_rms[2, idx] = np.around(len(rms[rms > 0.1]) / len(total_rms[total_rms > 0.1]) * 100, decimals=2)
+        amps = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
+                            (stetson_daily[str(dy) + '_l'] > lstet_cut) &
+                            (stetson_daily['object_type'] == 'LSST')].d90.to_numpy()
 
-    counts[:, idx], bins = np.histogram(mags, range=[8, 22], bins=14)
+        amp_pass.extend(amps)
 
-    n_pass_other = len(stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
-                                    (stetson_daily[str(dy) + '_l'] > lstet_cut) &
-                                    (stetson_daily['object_type'] != 'LSST')])
+        ids = stetson_daily[(stetson_daily[str(dy) + '_j'] > jstet_cut) &
+                            (stetson_daily[str(dy) + '_l'] > lstet_cut) &
+                            (stetson_daily['object_type'] == 'LSST')].name.to_numpy()
 
-    per_pass_other[idx]  = np.around((n_pass_other / len(stetson_daily[stetson_daily['object_type'] != 'LSST'])) * 100, decimals=2)
+        id_pass.extend(ids)
+    except:
+        continue
+mag_pass = np.array(mag_pass)
+g_mags_pass = known_g[known_g.diaObjectId.isin(np.array(id_pass).astype(int))].g.to_numpy()
+r_mags_pass = known_r[known_r.diaObjectId.isin(np.array(id_pass).astype(int))].r.to_numpy()
+i_mags_pass = known_i[known_i.diaObjectId.isin(np.array(id_pass).astype(int))].i.to_numpy()
+y_mags_pass = known_y[known_y.diaObjectId.isin(np.array(id_pass).astype(int))].y.to_numpy()
 
-plt.figure(figsize=(9,6))
-
-plt.boxplot([c_rms[0, :], c_rms[1, :], c_rms[2, :]],
-            labels=[r'$\Delta_{90} < 0.01$', r'$0.01 < \Delta_{90} < 0.1$', r'$\Delta_{90} > 0.1$'])
-plt.ylabel('Percentage of Variable Sources from Rubin-LSST', fontsize=15)
-plt.yticks(fontsize=12)
-plt.xticks(fontsize=12)
-plt.xlabel("Amplitude", fontsize=15)
-plt.savefig("rms_comparison.png", dpi=200, bbox_inches='tight')
-plt.show()
-plt.close()
-
-count_avg = np.mean(counts, axis=1)
-
-plt.figure(figsize=(9,6))
-plt.stairs(count_avg, bins, edgecolor='k', linewidth=2)
-plt.plot([16, 16], [0,6500], c='r', linewidth=2)
-plt.text(12, 6000, "Likely Blends", fontsize=12, color="k")
-plt.ylabel('Average Count', fontsize=15)
-plt.ylim([0, 6500])
-plt.yticks(fontsize=12)
-plt.xlabel(r'V$_T$', fontsize=15)
-plt.xlim([8,22])
-plt.xticks(fontsize=12)
-plt.savefig("mag_recovery_lsst_j-l-stetson.png", dpi=200, bbox_inches='tight')
-plt.show()
-plt.close()
 
 plt.figure(figsize=(9,6))
 
-plt.boxplot([per_pass_lsst, per_pass_other], labels=['Rubin-LSST', 'All Others'])
-plt.ylabel('% of Stars Passing Stetson J/L Cuts', fontsize=15)
+plt.scatter(mag_pass, amp_pass, marker='.', alpha=0.3, c='k')
+plt.ylabel(r'Variable Star Amplitude ($\Delta_{90}$)', fontsize=15)
 plt.yticks(fontsize=12)
-plt.ylim([0, 20])
+plt.yscale('log')
 plt.xticks(fontsize=12)
-plt.xlabel("Object Source", fontsize=15)
-plt.savefig("stetson_daily_comparison.png", dpi=200, bbox_inches='tight')
+plt.xlabel(r"$T_V$", fontsize=15)
+plt.savefig("amplitude_lsst_vars.png", dpi=200, bbox_inches='tight')
 plt.show()
 plt.close()
+
+
+plt.figure(figsize=(9,6))
+
+plt.boxplot([g_mags_pass[~np.isnan(g_mags_pass)], r_mags_pass[~np.isnan(r_mags_pass)],
+             i_mags_pass[~np.isnan(i_mags_pass)], y_mags_pass[~np.isnan(y_mags_pass)], mag_pass],
+            labels=['g', 'r', 'i', 'y', r'$T_V$'])
+plt.ylabel('Magnitude Range', fontsize=15)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Filter", fontsize=15)
+plt.savefig("mag_comparison.png", dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
+
+Utils.log('The smallest amplitude recovery was ' + str(np.nanmin(amp_pass)) + '.', 'info')
+Utils.log('The faintest magnitude recovery was ' + str(np.nanmax(mag_pass)) + '.', "info")

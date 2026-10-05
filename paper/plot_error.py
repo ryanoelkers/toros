@@ -15,11 +15,12 @@ from astropy.stats import sigma_clip as sc
 import numpy as np
 import statistics
 
-data_dir = Configuration.LIGHTCURVE_FIELD_DIRECTORY
+data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
 
 # read in the star list to convert to Vmag
 full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt",
                         sep=' ', low_memory=False)
+
 full_list['bmp'] = full_list['phot_bp_mean_mag'] - full_list['phot_rp_mean_mag']
 full_list['v'] = (full_list['phot_g_mean_mag']
                   + 0.01760
@@ -56,8 +57,9 @@ plt.close()
 errors = pd.read_csv(data_dir + Configuration.FIELD + '_errors.txt',
                      delimiter=' ',
                      low_memory=False)
+errors = errors[errors.cat_source == 'toros'].copy().reset_index(drop=True)
 
-sky_bkg = 60.
+sky_bkg = 15.
 sky_flux = np.pi * (Configuration.APER_SIZE ** 2) * sky_bkg * Configuration.GAIN
 
 errors['flux'] = 10 ** (((errors.mag.to_numpy() - 2.5 * np.log10(300.)) - 25.)/(-2.5))
@@ -66,6 +68,10 @@ errors['shotnsky'] = np.sqrt(errors.flux + sky_flux) / errors.flux
 
 mgs = errors.mag.to_numpy() - tv_zpt
 rms = errors.rms.to_numpy()
+
+ok = np.argwhere(mgs > 19.5)
+mn_er, md_er, st_er = scs(rms[ok], sigma=3)
+
 pht_lim = errors['shot'].to_numpy()
 pht_sky_lim = errors['shotnsky'].to_numpy()
 
@@ -76,7 +82,7 @@ plt.scatter(mgs, rms, marker='.', c='k', alpha=0.1)
 plt.plot(mgs[np.argsort(mgs)], pht_lim[np.argsort(mgs)], c='r', linewidth=3, label='Photon Noise')
 plt.plot(mgs[np.argsort(mgs)], pht_sky_lim[np.argsort(mgs)], c='orange', linewidth=3, label='Photon & Sky Noise')
 
-plt.xlabel(r'$V_{TR}$', fontsize=20)
+plt.xlabel(r'$T_V$', fontsize=20)
 plt.xticks(fontsize=15)
 plt.xlim([8, 20.2])
 plt.ylabel('rms', fontsize=20)
