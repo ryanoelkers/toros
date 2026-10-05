@@ -211,8 +211,8 @@ for idx, row in vary_list.iterrows():
 
         try:
             # calculate the stetson metrics
-            jstet, _, lstet = Varstats.stetson_metrics(lc[(lc.mag > 0) & (lc.err > 0)].mag,
-                                                       lc[(lc.mag > 0) & (lc.err > 0)].err)
+            jstet, _, lstet = Varstats.stetson_metrics(lc[(lc.mag > 0) & (lc.err > 0)].mag.to_numpy(),
+                                                       lc[(lc.mag > 0) & (lc.err > 0)].err.to_numpy())
 
             vary_list.loc[idx, 'jstet'] = np.around(jstet, decimals=4)
             vary_list.loc[idx, 'lstet'] = np.around(lstet, decimals=4)
