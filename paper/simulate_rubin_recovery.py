@@ -14,17 +14,23 @@ from libraries.varstats import Varstats
 from scipy.stats import median_abs_deviation as mad
 
 # read in the varstats file
-varstats = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
+varstats = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + "lc_stats/" + Configuration.FIELD + "_varstats.txt",
                        sep=' ', low_memory=False)
+varstats['cat_source'] = 'toros'
+varstats.loc[varstats.source_id == varstats.lsst_id, 'cat_source'] = 'lsst'
 
 # read in the first light curve just to get the required dates
 if varstats.iloc[0].chip < 10:
-    lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/0' + str(varstats.iloc[0].chip) + '/' +
-                     Configuration.FIELD + '_' + str(varstats.iloc[0].source_id) + '.lc',
+    lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                     "star_list/fin/" +
+                     "0" + str(varstats.iloc[0].chip) + "/" +
+                     Configuration.FIELD + "_" + str(varstats.iloc[0].source_id) + ".lc",
                      sep=" ")
 else:
-    lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/' + str(varstats.iloc[0].chip) + '/' +
-                     Configuration.FIELD + '_' + str(varstats.iloc[0].source_id) + '.lc',
+    lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                     "star_list/fin/" +
+                     str(varstats.iloc[0].chip) + "/" +
+                     Configuration.FIELD + "_" + str(varstats.iloc[0].source_id) + ".lc",
                      sep=" ")
 jd = lc.jd.to_numpy()
 del lc
@@ -40,7 +46,7 @@ f_dy = open("stetson_metrics_daily.txt", "w")
 f_dys = open("stetson_metrics_cumulative.txt", "w")
 
 # set up the header file
-header = "name mag rms d90 object_type"
+header = "name mag rms d90 object_type cat_source "
 for dy in dys:
     header = header + " " + str(int(dy)) + "_j"
     header = header + " " + str(int(dy)) + "_l"
@@ -53,19 +59,64 @@ f_dys.write(header)
 # now loop through each light curve getting the daily j/l, and the cumulative j/l
 for idx, row in varstats.iterrows():
 
-    # read in the light curve
-    if row.chip < 10:
-        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/0' + str(row.chip) + '/' +
-                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                         sep=" ")
+    if row.cat_source == 'toros':
+        try:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+        except:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
     else:
-        lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_RESCALE_DIRECTORY + '/' + str(row.chip) + '/' +
-                         Configuration.FIELD + '_' + str(row.source_id) + '.lc',
-                         sep=" ")
+        try:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "lsst/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+        except:
+            if row.chip < 10:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 "0" + str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
+            else:
+                lc = pd.read_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY +
+                                 "star_list/fin/" +
+                                 str(row.chip) + "/" +
+                                 Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                                 sep=" ")
 
     # set up the line for the star
-    line_dy = str(row.source_id) + " " + str(row.mag) + " " + str(row.rms) + " " + str(row.d90) + " " + str(row.object_type)
-    line_dys = str(row.source_id) + " " + str(row.mag) + " " + str(row.rms) + " " + str(row.d90) + " " + str(row.object_type)
+    line_dy = str(row.source_id) + " " + str(row.mag) + " " + str(row.rms) + " " + str(row.d90) + " " + str(row.object_type) + " " + str(row.cat_source)
+    line_dys = str(row.source_id) + " " + str(row.mag) + " " + str(row.rms) + " " + str(row.d90) + " " + str(row.object_type) + " " + str(row.cat_source)
 
     # calculate the j/l per day and cumulative
     for dy in dys:
