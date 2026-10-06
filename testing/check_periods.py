@@ -9,20 +9,50 @@ matplotlib.use("TkAgg")
 pil_logger = logging.getLogger('PIL')
 pil_logger.setLevel(logging.INFO)
 import matplotlib.pyplot as plt
+from astropy.stats import sigma_clipped_stats as scs
 
-data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
+tv_zpt = 5.4
+xcen_47tuc = 6853
+ycen_47tuc = 5375
+rad_47tuc = 270
 
-varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
-varstats = varstats[(varstats.source_id != varstats.lsst_id)].copy().reset_index(drop=True)
+# directories
+data_dir = "/Volumes/nomad_vandy/toros/lc_stats/"
+lc_dir = "/Volumes/nomad_vandy/toros/fin/"
 
-sim_pers = np.zeros(len(varstats))
-pwr_rnk = np.zeros(len(varstats))
-for idx, row in varstats.iterrows():
+# read in the varstats file
+varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats_w_flags.txt", sep=' ', low_memory=False)
+perstats = varstats[varstats.per_ok == 1].copy().reset_index(drop=True)
+n_outs = np.zeros(len(perstats))
+tot = np.zeros(len(perstats))
+clp = np.zeros(len(perstats))
 
-    sim_pers[idx] = len(varstats[varstats.prd == row.prd])
-    pwr_rnk[idx] = len(varstats[(varstats.pwr > row.pwr) & (varstats.prd == row.prd)])
+for idx, row in perstats.iterrows():
 
-    if idx % 1000 == 0:
-        Utils.log(str(len(varstats) - idx - 1), "info")
+    if row.chip < 10:
+        lc = pd.read_csv(lc_dir +
+                         "0" + str(row.chip) + "/" +
+                         Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                         sep=" ")
+    else:
+        lc = pd.read_csv(lc_dir +
+                         str(row.chip) + "/" +
+                         Configuration.FIELD + "_" + str(row.source_id) + ".lc",
+                         sep=" ")
+    if row.pnts == 0:
+        mag = lc[lc.mag > 0].mag.to_numpy()
+        mn, md, sg = scs(mag, sigma=3)
+        tot[idx] = len(mag)
+        clp[idx] = len(mag[(mag < mn + 3*sg) & (mag > mn - 3*sg)])
+        n_outs[idx] = tot[idx] - clp[idx]
+        ph = (lc[lc.mag > 0].jd.to_numpy() - lc[lc.mag > 0].jd.min()) / row.prd % 1
 
+        # if (n_outs[idx] < 10) & (row.G47T == 0) & (row.prd > 0):
+        #      Utils.log(str(len(perstats) - idx -1), "info")
+        #      plt.scatter(ph, mag, c='k')
+        #      plt.gca().invert_yaxis()
+        #      plt.title(str(np.around(row.prd, decimals=6)) + " " + str(row.source_id) + " " + str(n_outs[idx]) + " " + str(tot[idx]))
+        #      plt.show()
+
+plt.hist(n_outs, bins=20)
 print('hold')

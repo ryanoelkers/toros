@@ -19,7 +19,8 @@ rad_47tuc = 270
 xcen_ngc121 = 1660
 ycen_ngc121 = 5000
 
-data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/"
+data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
+lc_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/rescale/"
 
 # read in the varstats file, and exclude the LSST variables for now
 varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
@@ -31,10 +32,10 @@ varstats['per_ok'] = 0
 varstats['var_ok'] = 0
 varstats['day_ok'] = 0
 
-dist = np.sqrt((varstats.xcen - xcen_47tuc) ** 2 + (varstats.ycen - ycen_47tuc) ** 2)
+dist = np.sqrt((varstats.xcen - xcen_47tuc) **2 + (varstats.ycen - ycen_47tuc)**2)
 varstats['G47T'] = np.where(dist < 1500, 1, 0)
 
-dist = np.sqrt((varstats.xcen - xcen_ngc121) ** 2 + (varstats.ycen - ycen_ngc121) ** 2)
+dist = np.sqrt((varstats.xcen - xcen_ngc121) **2 + (varstats.ycen - ycen_ngc121)**2)
 varstats['N121'] = np.where(dist < 150, 1, 0)
 
 varstats['grps'] = 0
@@ -47,22 +48,22 @@ varstats.loc[(varstats.xcen > 8530) & (varstats.xcen < 8620) & (varstats.G47T ==
 varstats.loc[varstats.edge == 1, 'grps'] = 1
 
 # Do the daily metric cutoffs
-pass_days = varstats[(varstats.out_mag_std > 0) & (varstats.pnts == 0)].copy().reset_index(drop=True)
+pass_days = varstats[(varstats.out_mag_std > 0) & (varstats.grps == 0)].copy().reset_index(drop=True)
 Utils.log("The number of stars with some kind of outburst between nights is " + str(len(pass_days)), "info")
 
 varstats.loc[(varstats.out_mag_std > 0) & (varstats.grps == 0), 'day_ok'] = 1
 
-plt.figure(figsize=(9,6))
-plt.scatter(pass_days.xcen, pass_days.ycen,
-            c='k', marker='.', label='Stars with Daily Variability')
-
-plt.xlabel('X Pixel', fontsize=20)
-plt.xticks(fontsize=15)
-plt.ylabel('Y Pixel', fontsize=20)
-plt.yticks(fontsize=15)
-plt.savefig("toros_xy_daily.png", dpi=200, bbox_inches='tight')
-plt.show()
-plt.close()
+# plt.figure(figsize=(9,6))
+# plt.scatter(pass_daily.xcen, pass_daily.ycen,
+#              c='k', marker='.', label='Stars with Daily Variability')
+#
+# plt.xlabel('X Pixel', fontsize=20)
+# plt.xticks(fontsize=15)
+# plt.ylabel('Y Pixel', fontsize=20)
+# plt.yticks(fontsize=15)
+# plt.savefig("toros_xy_daily.png", dpi=200, bbox_inches='tight')
+# plt.show()
+# plt.close()
 
 # Do the Stetson Metric Cutouffs
 jstet_results = Varstats.stetson_j_peak_and_cutoff(varstats.jstet, sigma_method="mirror_std", n_sigma=3.0)
@@ -79,22 +80,24 @@ Utils.log("The number of stars passing the Welch-Stetson cuts is: " + str(n_var_
 # plt.figure(figsize=(15,6))
 #
 # plt.subplot(1, 2, 1)
-# plt.hist(varstats['jstet'], bins=30, range=[0, 30], histtype='step', color='k')
-# plt.plot([jstet_cut, jstet_cut], [0, 62000], c='r', linewidth=3)
-# plt.text(jstet_cut + .5, 50000, "J > " + str(np.around(jstet_cut, decimals=2)), fontsize=20, color="k")
+# plt.hist(varstats['jstet'], bins=30, range=[0,30], histtype='step', color='k')
+# plt.plot([jstet_cut, jstet_cut], [0, 54000], c='r', linewidth=3)
+# plt.text(jstet_cut + .5, 2500,
+#            "J > " + str(np.around(jstet_cut, decimals=2)),
+#            fontsize=20, color="k")
 # plt.xlabel('J', fontsize=20)
 # plt.xticks(fontsize=15)
-# plt.ylim([0, 60000])
+# plt.ylim([0,3000])
 # plt.ylabel('Count', fontsize=20)
 # plt.yticks(fontsize=15)
 #
 # plt.subplot(1, 2, 2)
-# plt.hist(varstats['lstet'], bins=30, range=[0, 30], histtype='step', color='k')
-# plt.plot([lstet_cut, lstet_cut], [0, 82000], c='r', linewidth=3)
-# plt.text(lstet_cut + .5, 65000, "L > " + str(np.around(lstet_cut, decimals=2)), fontsize=20, color="k")
+# plt.hist(varstats['lstet'], bins=30, range=[0,30], histtype='step', color='k')
+# plt.plot([lstet_cut, lstet_cut], [0, 28000], c='r', linewidth=3)
+# plt.text(lstet_cut + .5, 2500, "L > " + str(np.around(lstet_cut, decimals=2)), fontsize=20, color="k")
 # plt.xlabel('L', fontsize=20)
 # plt.xticks(fontsize=15)
-# plt.ylim([0, 80000])
+# plt.ylim([0, 3000])
 # plt.ylabel('Count', fontsize=20)
 # plt.yticks(fontsize=15)
 #
@@ -108,20 +111,19 @@ varstats.loc[(varstats.jstet > jstet_cut) & (varstats.lstet > lstet_cut) & (vars
 
 # plt.figure(figsize=(9,6))
 # plt.scatter(pass_vars.xcen, pass_vars.ycen,
-#              c='k', marker='.', label='Stars with Statistical Variability')
-# #
+#             c='k', marker='.', label='Stars with Statistical Variability')
+#
 # plt.xlabel('X Pixel', fontsize=20)
 # plt.xticks(fontsize=15)
 # plt.ylabel('Y Pixel', fontsize=20)
 # plt.yticks(fontsize=15)
 # plt.savefig("toros_xy_vars.png", dpi=200, bbox_inches='tight')
 # plt.show()
-# plt.close()
+#plt.close()
 
 
 sim_pers = np.zeros(len(varstats))
 pwr_rnk = np.zeros(len(varstats))
-out_pts = np.zeros(len(varstats))
 for idx, row in varstats.iterrows():
 
     sim_pers[idx] = len(varstats[varstats.prd == row.prd])

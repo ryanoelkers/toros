@@ -39,8 +39,6 @@ vary_list['mag'] = 0.
 vary_list['rms'] = 0.
 vary_list['min_rms'] = 0.
 vary_list['full_rms'] = 0.
-vary_list['out_mag_nstd'] = 0
-vary_list['out_std_nmag'] = 0
 vary_list['out_mag_std'] = 0
 vary_list['jstet'] = -9.9999
 vary_list['lstet'] = -9.9999
@@ -48,11 +46,44 @@ vary_list['d90'] = -9.9999
 vary_list['prd'] = -9.9999
 vary_list['pwr'] = -9.9999
 vary_list['fap'] = -9.9999
-vary_list['prox'] = 0
 vary_list['cntm'] = 0
 vary_list['edge'] = 0
 vary_list['simp'] = 0
 vary_list['pnts'] = 0
+vary_list['otlr'] = 0
+vary_list['grps'] = 0
+vary_list['var_pass'] = 0
+vary_list['per_pass'] = 0
+vary_list['day_pass'] = 0
+
+vary_list.loc[(vary_list.xcen > 1010) & (vary_list.xcen < 1210) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 1580) & (vary_list.xcen < 1810) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 2260) & (vary_list.xcen < 2320) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 7740) & (vary_list.xcen < 7940) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 8380) & (vary_list.xcen < 8440) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 8530) & (vary_list.xcen < 8620) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[vary_list.edge == 1, 'grps'] = 1
+
+tv_zpt = 5.4
+xcen_47tuc = 6853
+ycen_47tuc = 5375
+rad_47tuc = 270
+
+xcen_ngc121 = 1660
+ycen_ngc121 = 5000
+
+dist = np.sqrt((vary_list.xcen - xcen_47tuc) ** 2 + (vary_list.ycen - ycen_47tuc) ** 2)
+vary_list['G47T'] = np.where(dist < 1500, 1, 0)
+
+dist = np.sqrt((vary_list.xcen - xcen_ngc121) ** 2 + (vary_list.ycen - ycen_ngc121) ** 2)
+vary_list['N121'] = np.where(dist < 150, 1, 0)
+
+vary_list['v'] = vary_list['master_mag'] - tv_zpt  # correct the V magnitude
+
+vary_list['pvar'] = np.where(vary_list['object_type'] == 'Var', 1, 0)
+vary_list['xray'] = np.where(vary_list['object_type'] == 'Xray', 1, 0)
+vary_list['lsst'] = 0
+vary_list.loc[(vary_list.cat_source == 'toros') & (vary_list.lsst_id != '--'), 'lsst'] = 1
 
 for idx, row in vary_list.iterrows():
 
@@ -115,12 +146,9 @@ for idx, row in vary_list.iterrows():
 
     # set up the proximity flag if necessary
     dist = np.sqrt((row.x - star_list.x) ** 2 + (row.y - star_list.y) ** 2)
-    prox = len(dist[(dist > 0) & (dist <= 16)])
-    if prox > 0:
-        vary_list.loc[idx, 'prox'] = 1
-
     contam = len(dist[(dist > 0) & (dist <= 24)])
-    if prox > 0:
+    
+    if contam > 0:
         vary_list.loc[idx, 'cntm'] = 1
 
     # edge of the frame (600 < x < 10560) (0 < y < 9700)
@@ -131,6 +159,14 @@ for idx, row in vary_list.iterrows():
     if npts > 0.1:
         vary_list.loc[idx, 'pnts'] = 1
 
+    # determine how many outliers exist
+    mag = lc[lc.mag > 0].mag.to_numpy()
+    mn, md, sg = scs(mag, sigma=3)
+    tot = len(mag)
+    clp = len(mag[(mag < mn + 3 * sg) & (mag > mn - 3 * sg)])
+    
+    vary_list.loc[idx, 'otlr'] = tot - clp
+    
     # get the rms values
     tmag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
     vary_list.loc[idx, 'mag'] = np.around(tmag, decimals=4)  # get the TOROS magnitude
@@ -157,16 +193,8 @@ for idx, row in vary_list.iterrows():
 
         # they are both out of bounds
         vary_list.loc[idx, 'out_mag_std'] = len(np.argwhere(clip_mag.mask & clip_std.mask).flatten())
-
-        # only mag is out of bounds
-        vary_list.loc[idx, 'out_mag_nstd'] = len(np.argwhere((clip_mag.mask == True) & (clip_std.mask == False)).flatten())
-
-        # only std is out of bounds
-        vary_list.loc[idx, 'out_std_nmag'] = len(np.argwhere((clip_mag.mask == False) & (clip_std.mask == True)).flatten())
     except:
         vary_list.loc[idx, 'out_mag_std'] = -1
-        vary_list.loc[idx, 'out_std_nmag'] = -1
-        vary_list.loc[idx, 'out_mag_nstd'] = -1
 
     try:
         min_rms = np.around(agg_lc[agg_lc.total_obs >=6].std_mag.min(), decimals=4)
@@ -225,9 +253,11 @@ for idx, row in vary_list.iterrows():
                   str(len(star_list) - idx - 1) + ' stars remain.',
                   'info')
 
+toros_stats = vary_list[vary_list.cat_source == 'toros'].copy().reset_index(drop=True)
+
 for idx, row in vary_list.iterrows():
-    vary_list.loc[idx, 'simp'] = (len(vary_list[(vary_list.prd == row.prd) & (vary_list.pwr > row.pwr)]) /
-                                  len(vary_list[(vary_list.prd == row.prd)]))
+    vary_list.loc[idx, 'simp'] = len(toros_stats[(toros_stats.prd == row.prd)])
+    vary_list.loc[idx, 'prnk'] = len(toros_stats[(toros_stats.pwr > row.pwr) & (toros_stats.prd == row.prd)])
 
 vary_list.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
