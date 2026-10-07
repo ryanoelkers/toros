@@ -12,8 +12,7 @@ import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
-data_dir = "/Volumes/nomad_vandy/toros/lc_stats/"
-lc_dir = "/Volumes/nomad_vandy/toros/fin/"
+data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/"
 
 # read in the varstats file, and exclude the LSST variables for now
 fullstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
@@ -30,7 +29,7 @@ fullstats.loc[(fullstats.out_mag_std > 0) &
 pass_days = fullstats[(fullstats.day_pass == 1) & (fullstats.cat_source == 'toros')].copy().reset_index(drop=True)
 pass_lsst = fullstats[(fullstats.day_pass == 1) & (fullstats.cat_source == 'lsst')].copy().reset_index(drop=True)
 
-fullstats.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
+fullstats.to_csv(data_dir + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
 
 Utils.log("The number of TOROS stars with some kind of outburst between nights is " + str(len(pass_days)), "info")
@@ -85,27 +84,3 @@ for idx, row in pass_days.iterrows():
 
 f.close()
 g.close()
-
-# for idx, row in pass_days.iterrows():
-#
-#         if row.G47T == 0:
-#             if row.chip < 10:
-#                     lc = pd.read_csv(lc_dir +
-#                                      "0" + str(row.chip) + "/" +
-#                                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
-#                                      sep=" ")
-#             else:
-#                     lc = pd.read_csv(lc_dir +
-#                                      str(row.chip) + "/" +
-#                                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
-#                                      sep=" ")
-#
-#             jd = lc[lc.mag > 0].jd.to_numpy()
-#             mag = lc[lc.mag > 0].mag.to_numpy()
-#             err = lc[lc.mag > 0].err.to_numpy()
-#
-#             plt.title(str(row.source_id) + " " + str(row.out_mag_std))
-#             plt.errorbar(jd, mag, yerr=err, fmt='none', c='k')
-#             plt.scatter(jd, mag, marker='.', c='k')
-#             plt.gca().invert_yaxis()
-#             plt.show()

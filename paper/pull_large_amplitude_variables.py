@@ -13,8 +13,7 @@ from astropy.coordinates import SkyCoord
 from astropy import units as u
 from libraries.varstats import Varstats
 
-data_dir = "/Volumes/nomad_vandy/toros/lc_stats/"
-lc_dir = "/Volumes/nomad_vandy/toros/fin/"
+data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/"
 
 # read in the varstats file, and exclude the LSST variables for now
 fullstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
@@ -26,55 +25,31 @@ jstet_cut = jstet_results['cutoff']
 lstet_results = Varstats.stetson_j_peak_and_cutoff(varstats.lstet, sigma_method="mirror_std", n_sigma=3.0)
 lstet_cut = lstet_results['cutoff']
 
-# plt.figure(figsize=(15,6))
-#
-# plt.subplot(1, 2, 1)
-# plt.hist(varstats['jstet'], bins=30, range=[0, 30], histtype='step', color='k')
-# plt.plot([jstet_cut, jstet_cut], [0, 62000], c='r', linewidth=3)
-# plt.text(jstet_cut + .5, 50000, "J > " + str(np.around(jstet_cut, decimals=2)), fontsize=20, color="k")
-# plt.xlabel('J', fontsize=20)
-# plt.xticks(fontsize=15)
-# plt.ylim([0, 60000])
-# plt.ylabel('Count', fontsize=20)
-# plt.yticks(fontsize=15)
-#
-# plt.subplot(1, 2, 2)
-# plt.hist(varstats['lstet'], bins=30, range=[0, 30], histtype='step', color='k')
-# plt.plot([lstet_cut, lstet_cut], [0, 82000], c='r', linewidth=3)
-# plt.text(lstet_cut + .5, 65000, "L > " + str(np.around(lstet_cut, decimals=2)), fontsize=20, color="k")
-# plt.xlabel('L', fontsize=20)
-# plt.xticks(fontsize=15)
-# plt.ylim([0, 80000])
-# plt.ylabel('Count', fontsize=20)
-# plt.yticks(fontsize=15)
-#
-# plt.savefig("toros_jl_cutoffs.png", dpi=200, bbox_inches='tight')
-# plt.show()
-# plt.close()# plt.figure(figsize=(15,6))
-# #
-# # plt.subplot(1, 2, 1)
-# # plt.hist(varstats['jstet'], bins=30, range=[0, 30], histtype='step', color='k')
-# # plt.plot([jstet_cut, jstet_cut], [0, 62000], c='r', linewidth=3)
-# # plt.text(jstet_cut + .5, 50000, "J > " + str(np.around(jstet_cut, decimals=2)), fontsize=20, color="k")
-# # plt.xlabel('J', fontsize=20)
-# # plt.xticks(fontsize=15)
-# # plt.ylim([0, 60000])
-# # plt.ylabel('Count', fontsize=20)
-# # plt.yticks(fontsize=15)
-# #
-# # plt.subplot(1, 2, 2)
-# # plt.hist(varstats['lstet'], bins=30, range=[0, 30], histtype='step', color='k')
-# # plt.plot([lstet_cut, lstet_cut], [0, 82000], c='r', linewidth=3)
-# # plt.text(lstet_cut + .5, 65000, "L > " + str(np.around(lstet_cut, decimals=2)), fontsize=20, color="k")
-# # plt.xlabel('L', fontsize=20)
-# # plt.xticks(fontsize=15)
-# # plt.ylim([0, 80000])
-# # plt.ylabel('Count', fontsize=20)
-# # plt.yticks(fontsize=15)
-# #
-# # plt.savefig("toros_jl_cutoffs.png", dpi=200, bbox_inches='tight')
-# # plt.show()
-# # plt.close()
+plt.figure(figsize=(15,6))
+
+plt.subplot(1, 2, 1)
+plt.hist(varstats['jstet'], bins=30, range=[0, 30], histtype='step', color='k')
+plt.plot([jstet_cut, jstet_cut], [0, 62000], c='r', linewidth=3)
+plt.text(jstet_cut + .5, 50000, "J > " + str(np.around(jstet_cut, decimals=2)), fontsize=20, color="k")
+plt.xlabel('J', fontsize=20)
+plt.xticks(fontsize=15)
+plt.ylim([0, 60000])
+plt.ylabel('Count', fontsize=20)
+plt.yticks(fontsize=15)
+
+plt.subplot(1, 2, 2)
+plt.hist(varstats['lstet'], bins=30, range=[0, 30], histtype='step', color='k')
+plt.plot([lstet_cut, lstet_cut], [0, 82000], c='r', linewidth=3)
+plt.text(lstet_cut + .5, 65000, "L > " + str(np.around(lstet_cut, decimals=2)), fontsize=20, color="k")
+plt.xlabel('L', fontsize=20)
+plt.xticks(fontsize=15)
+plt.ylim([0, 80000])
+plt.ylabel('Count', fontsize=20)
+plt.yticks(fontsize=15)
+
+plt.savefig("toros_jl_cutoffs.png", dpi=200, bbox_inches='tight')
+plt.show()
+plt.close()
 
 # Do the daily metric cutoffs
 fullstats.loc[(fullstats.jstet > jstet_cut) &
@@ -86,7 +61,7 @@ fullstats.loc[(fullstats.jstet > jstet_cut) &
 pass_vars = fullstats[(fullstats.var_pass == 1) & (fullstats.cat_source == 'toros')].copy().reset_index(drop=True)
 pass_lsst = fullstats[(fullstats.var_pass == 1) & (fullstats.cat_source == 'lsst')].copy().reset_index(drop=True)
 
-fullstats.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
+fullstats.to_csv(data_dir + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
 
 Utils.log("The number of TOROS stars with large amplitude variability is " + str(len(pass_vars)), "info")
@@ -143,27 +118,3 @@ for idx, row in pass_vars.iterrows():
 
 f.close()
 g.close()
-
-# for idx, row in pass_vars.iterrows():
-#
-#         if row.G47T == 0:
-#             if row.chip < 10:
-#                     lc = pd.read_csv(lc_dir +
-#                                      "0" + str(row.chip) + "/" +
-#                                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
-#                                      sep=" ")
-#             else:
-#                     lc = pd.read_csv(lc_dir +
-#                                      str(row.chip) + "/" +
-#                                      Configuration.FIELD + "_" + str(row.source_id) + ".lc",
-#                                      sep=" ")
-#
-#             jd = lc[lc.mag > 0].jd.to_numpy()
-#             mag = lc[lc.mag > 0].mag.to_numpy()
-#             err = lc[lc.mag > 0].err.to_numpy()
-#
-#             plt.title(str(row.source_id) + " " + str(row.out_mag_std))
-#             plt.errorbar(jd, mag, yerr=err, fmt='none', c='k')
-#             plt.scatter(jd, mag, marker='.', c='k')
-#             plt.gca().invert_yaxis()
-#             plt.show()

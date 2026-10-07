@@ -34,36 +34,6 @@ vary_list = star_list.copy().reset_index(drop=True)
 vary_list['cat_source'] = 'toros'
 vary_list.loc[vary_list.source_id == vary_list.lsst_id, 'cat_source'] = 'lsst'
 
-# add new columns to star list
-vary_list['mag'] = 0.
-vary_list['rms'] = 0.
-vary_list['min_rms'] = 0.
-vary_list['full_rms'] = 0.
-vary_list['out_mag_std'] = 0
-vary_list['jstet'] = -9.9999
-vary_list['lstet'] = -9.9999
-vary_list['d90'] = -9.9999
-vary_list['prd'] = -9.9999
-vary_list['pwr'] = -9.9999
-vary_list['fap'] = -9.9999
-vary_list['cntm'] = 0
-vary_list['edge'] = 0
-vary_list['simp'] = 0
-vary_list['pnts'] = 0
-vary_list['otlr'] = 0
-vary_list['grps'] = 0
-vary_list['var_pass'] = 0
-vary_list['per_pass'] = 0
-vary_list['day_pass'] = 0
-
-vary_list.loc[(vary_list.xcen > 1010) & (vary_list.xcen < 1210) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
-vary_list.loc[(vary_list.xcen > 1580) & (vary_list.xcen < 1810) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
-vary_list.loc[(vary_list.xcen > 2260) & (vary_list.xcen < 2320) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
-vary_list.loc[(vary_list.xcen > 7740) & (vary_list.xcen < 7940) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
-vary_list.loc[(vary_list.xcen > 8380) & (vary_list.xcen < 8440) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
-vary_list.loc[(vary_list.xcen > 8530) & (vary_list.xcen < 8620) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
-vary_list.loc[vary_list.edge == 1, 'grps'] = 1
-
 tv_zpt = 5.4
 xcen_47tuc = 6853
 ycen_47tuc = 5375
@@ -84,6 +54,37 @@ vary_list['pvar'] = np.where(vary_list['object_type'] == 'Var', 1, 0)
 vary_list['xray'] = np.where(vary_list['object_type'] == 'Xray', 1, 0)
 vary_list['lsst'] = 0
 vary_list.loc[(vary_list.cat_source == 'toros') & (vary_list.lsst_id != '--'), 'lsst'] = 1
+
+# add new columns to star list
+vary_list['mag'] = 0.
+vary_list['rms'] = 0.
+vary_list['min_rms'] = 0.
+vary_list['full_rms'] = 0.
+vary_list['out_mag_std'] = 0
+vary_list['jstet'] = -9.9999
+vary_list['lstet'] = -9.9999
+vary_list['d90'] = -9.9999
+vary_list['prd'] = -9.9999
+vary_list['pwr'] = -9.9999
+vary_list['fap'] = -9.9999
+vary_list['cntm'] = 0
+vary_list['edge'] = 0
+vary_list['simp'] = 0
+vary_list['prnk'] = 0
+vary_list['pnts'] = 0
+vary_list['otlr'] = 0
+vary_list['grps'] = 0
+vary_list['var_pass'] = 0
+vary_list['per_pass'] = 0
+vary_list['day_pass'] = 0
+
+vary_list.loc[(vary_list.xcen > 1010) & (vary_list.xcen < 1210) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 1580) & (vary_list.xcen < 1810) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 2260) & (vary_list.xcen < 2320) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 7740) & (vary_list.xcen < 7940) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 8380) & (vary_list.xcen < 8440) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[(vary_list.xcen > 8530) & (vary_list.xcen < 8620) & (vary_list.G47T == 0) & (vary_list.N121 == 0), 'grps'] = 1
+vary_list.loc[vary_list.edge == 1, 'grps'] = 1
 
 for idx, row in vary_list.iterrows():
 

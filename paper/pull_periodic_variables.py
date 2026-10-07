@@ -13,19 +13,20 @@ from astropy.stats import sigma_clipped_stats as scs
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
-data_dir = "/Volumes/nomad_vandy/toros/lc_stats/"
-lc_dir = "/Volumes/nomad_vandy/toros/fin/"
+data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/"
 
 # read in the varstats file, and exclude the LSST variables for now
 fullstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt", sep=' ', low_memory=False)
-
+fullstats.per_pass = 0
 fullstats.loc[(fullstats.prnk == 0) &
+              (fullstats.pnts == 0) &
               (fullstats.fap < 0.001) &
               (fullstats.grps == 0) &
+              (fullstats.edge == 0) &
               (fullstats.prd > 0) &
               (fullstats.otlr < 10), 'per_pass'] = 1
 
-fullstats.to_csv(Configuration.LIGHTCURVE_FIELD_DIRECTORY + Configuration.FIELD + "_varstats.txt",
+fullstats.to_csv(data_dir + Configuration.FIELD + "_varstats.txt",
                  sep=' ', header=True, index=False)
 pass_pers = fullstats[(fullstats.per_pass == 1) & (fullstats.cat_source == 'toros')].copy().reset_index(drop=True)
 pass_lsst = fullstats[(fullstats.per_pass == 1) & (fullstats.cat_source == 'lsst')].copy().reset_index(drop=True)
