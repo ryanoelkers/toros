@@ -15,7 +15,7 @@ from astropy.stats import sigma_clip as sc
 import numpy as np
 import statistics
 
-data_dir = "/Volumes/OUMUAMUA/toros/commissioning/varstats/FIELD_0e.001/"
+data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/"
 
 # read in the star list to convert to Vmag
 full_list = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt",
@@ -40,8 +40,8 @@ plt.figure(figsize=(9,6))
 plt.hist(star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['master_mag'] -
          star_list[(star_list.object_type =='Star') & (star_list.cntm == 0)]['v'],
          bins=40, color='k', histtype='step', linewidth=2)
-plt.plot([tv_zpt, tv_zpt], [3000, 3200], color='r', linewidth=3)
-plt.text(tv_zpt + 0.05, 3050,
+plt.plot([tv_zpt, tv_zpt], [1800, 2200], color='r', linewidth=3)
+plt.text(tv_zpt + 0.05, 2000,
          r"$\tilde{x}$ = " + str(np.around(tv_zpt, decimals=1)) + r" $\pm$ " + str(np.around(tv_zpt_std, decimals=1)),
          fontsize=15, color="k")
 plt.xlabel('T - V', fontsize=20)
@@ -49,6 +49,7 @@ plt.xticks(fontsize=15)
 plt.xlim([2, 7])
 plt.ylabel('Count', fontsize=20)
 plt.yticks(fontsize=15)
+plt.ylim([0, 2500])
 plt.savefig("toros_t2v_offset.png", dpi=200, bbox_inches='tight')
 # plt.show()
 plt.close()

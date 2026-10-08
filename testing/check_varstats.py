@@ -48,7 +48,7 @@ vary_list['G47T'] = np.where(dist < 1500, 1, 0)
 dist = np.sqrt((vary_list.xcen - xcen_ngc121) ** 2 + (vary_list.ycen - ycen_ngc121) ** 2)
 vary_list['N121'] = np.where(dist < 150, 1, 0)
 
-vary_list['v'] = vary_list['master_mag'] - tv_zpt  # correct the V magnitude
+vary_list['v'] = 0 # vary_list['master_mag'] - tv_zpt  # correct the V magnitude
 
 vary_list['pvar'] = np.where(vary_list['object_type'] == 'Var', 1, 0)
 vary_list['xray'] = np.where(vary_list['object_type'] == 'Xray', 1, 0)
@@ -171,6 +171,7 @@ for idx, row in vary_list.iterrows():
     # get the rms values
     tmag, _, full_rms = scs(lc[(lc.mag > 0) & (lc.err > 0)].mag, sigma=2.5)
     vary_list.loc[idx, 'mag'] = np.around(tmag, decimals=4)  # get the TOROS magnitude
+    vary_list.loc[idx, 'v'] = tmag - tv_zpt
     vary_list.loc[idx, 'full_rms'] = np.around(full_rms, decimals=4)  # get the rms of the full light curve
 
     # determine if any days have a magnitude way higher or lower than normal
