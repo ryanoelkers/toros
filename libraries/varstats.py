@@ -22,8 +22,10 @@ class Varstats:
         peak_info = Varstats.find_peak(j_values)
         peak = peak_info["peak_value"]
 
-        # sigma = Varstats.robust_core_sigma(j_values, peak, side="left", method=sigma_method)
-        peak, sigma, _ = Varstats.gaussian_core_fit(j_values)
+        try:
+            peak, sigma, _ = Varstats.gaussian_core_fit(j_values)
+        except:
+            sigma = Varstats.robust_core_sigma(j_values, peak, side="left", method=sigma_method)
 
         cutoff = peak + n_sigma * sigma
         candidate_mask = j_values > cutoff
