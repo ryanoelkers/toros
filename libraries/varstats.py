@@ -25,7 +25,7 @@ class Varstats:
         try:
             peak, sigma, _ = Varstats.gaussian_core_fit(j_values)
         except:
-            sigma = Varstats.robust_core_sigma(j_values, peak, side="left", method=sigma_method)
+            sigma = Varstats.robust_core_sigma(j_values[j_values < 5], peak, side="right", method=sigma_method)
 
         cutoff = peak + n_sigma * sigma
         candidate_mask = j_values > cutoff
@@ -150,7 +150,7 @@ class Varstats:
             raise RuntimeError("Gaussian fit failed to converge; try robust_core_sigma() instead.")
 
     @staticmethod
-    def robust_core_sigma(data, peak, side="left", method="mirror_std"):
+    def robust_core_sigma(data, peak, side="right", method="mirror_std"):
         """
         Estimate the width (sigma) of the core distribution around `peak`,
         ignoring contamination from a one-sided tail (e.g. real variables
