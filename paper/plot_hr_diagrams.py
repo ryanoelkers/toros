@@ -1,10 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import astropy.units as u
 import pandas as pd
 from config import Configuration
-from libraries.utils import Utils
-import matplotlib.colors as colors
+
 
 data_dir = "/Users/yuw816/Data/toros/commissioning/lc/FIELD_0e.001/lc_stats/"
 varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt",
@@ -12,7 +10,7 @@ varstats = pd.read_csv(data_dir + Configuration.FIELD + "_varstats.txt",
 varstats = varstats[((varstats.var_pass == 1) | (varstats.per_pass == 1) | (varstats.day_pass == 1)) & 
                     (varstats.cat_source == 'toros')].copy().reset_index(drop=True)
 
-df = varstats[['star_id', 'cat_source', 'prd', 'v', 'rms', 'd90', 'jstet', 'lstet',
+df = varstats[['star_id', 'source_id', 'chip', 'cat_source', 'prd', 'v', 'rms', 'd90', 'jstet', 'lstet',
                'phot_g_mean_mag', 'phot_bp_mean_mag', 'phot_rp_mean_mag', 'var_pass','per_pass', 'day_pass', 'parallax',
                'parallax_error', 'G47T', 'N121', 'pvar', 'xray', 'lsst']].copy()
 df = df[(df.parallax_error / df.parallax < 0.5)]
@@ -40,3 +38,4 @@ plt.ylabel('G', fontsize=15)
 plt.yticks(fontsize=12)
 plt.savefig("toros_hr_diagram.png", dpi=200, bbox_inches='tight')
 plt.show()
+
